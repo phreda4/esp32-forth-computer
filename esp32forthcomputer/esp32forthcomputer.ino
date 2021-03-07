@@ -196,6 +196,351 @@ if (keyboard->virtualKeyAvailable()) {
 
 //------------------- INTERPRETER
 
+const char *wcoredic[]={
+";","(",")","[","]",
+"EX","0?","1?","+?","-?",
+"<?",">?","=?",">=?","<=?","<>?","AND?","NAND?","BT?",
+"DUP","DROP","OVER","PICK2","PICK3","PICK4","SWAP","NIP",
+"ROT","2DUP","2DROP","3DROP","4DROP","2OVER","2SWAP",
+"@","C@","@+","C@+","!","C!","!+","C!+","+!","C+!",
+">A","A>","A@","A!","A+","A@+","A!+",
+">B","B>","B@","B!","B+","B@+","B!+",
+"NOT","NEG","ABS","SQRT","CLZ",
+"AND","OR","XOR","+","-","*","/","MOD",
+"<<",">>",">>>","/MOD","*/","*>>","<</",
+"MOVE","MOVE>","FILL","CMOVE","CMOVE>","CFILL"
+
+
+};
+
+enum {
+iLIT1,iLIT2,iLITs,iCOM,iJMPR,iJMP,iCALL,iADR,iVAR, // no 
+ 
+iEND,OPEB,CLOB,OPEA,CLOA,iEX,ZIF,UIF,PIF,NIF,
+IFL,IFG,IFE,IFGE,IFLE,IFNE,IFAND,IFNAND,IFBT,
+iDUP,iDROP,iOVER,iPICK2,iPICK3,iPICK4,iSWAP,iNIP,	
+iROT,i2DUP,i2DROP,i3DROP,i4DROP,i2OVER,i2SWAP,	
+iFE,iCFE,iFEP,iCFEP,iST,iCST,iSTP,iCSTP,iPST,iCPST,		
+iTA,iAT,iAFE,iAST,iAP,iAFEP,iASTP,					
+iTB,iBT,iBFE,iBST,iBP,iBFEP,iBSTP,					
+iNOT,iNEG,iABS,iSQRT,iCLZ,						
+iAND,iOR,iXOR,iADD,iSUB,iMUL,iDIV,iMOD,
+iSHL,iSAR,iSHR,iDMOD,iMULDIV,iMULSH,iSHDIV,
+iMOV,iMOVA,iFILL,iCMOV,iCMOVA,iCFILL
+};
+
+#define STACKSIZE 1024
+
+uint32_t CODE,CODELAST;
+int32_t stack[STACKSIZE];
+uint8_t memcode[0xffff];
+
+void vmreset() {
+}
+
+void runr3(int boot) {
+stack[STACKSIZE-1]=0;  
+int32_t TOS=0;
+int32_t *NOS=&stack[0];
+int32_t *RTOS=&stack[STACKSIZE-1];
+int32_t REGA=0;
+int32_t REGB=0;
+byte op=0;
+int32_t ip=boot;
+while(1) { 
+  op=memcode[ip++]; //  printcode(op);
+  switch(op){
+    case iLIT1:NOS++;*NOS=TOS;TOS=*(int16_t*)&memcode[ip];ip+=2;continue;
+    case iLIT2:NOS++;*NOS=TOS;TOS=*(int32_t*)&memcode[ip];ip+=4;continue;
+    case iLITs:NOS++;*NOS=TOS;op=memcode[ip++];TOS=ip;ip+=op;continue;
+    case iCOM:op=memcode[ip++];ip+=op;continue;
+    case iJMPR:ip+=*(int16_t*)&memcode[ip];continue;
+    case iJMP:ip=*(int32_t*)&memcode[ip];continue;
+    case iCALL:RTOS--;*RTOS=ip;ip=*(int32_t*)&memcode[ip];continue;
+    case iADR:NOS++;*NOS=TOS;TOS=*(int32_t*)&memcode[ip];ip+=4;continue;
+    case iVAR:NOS++;*NOS=TOS;TOS=*(int32_t*)&memcode[*(int32_t*)&memcode[ip]];ip+=4;continue;
+    case iEND:ip=*RTOS;RTOS++;if (ip==0) { return; }; continue;  
+    case OPEB:continue;
+    case CLOB:ip+=*(int16_t*)&memcode[ip];ip+=2;continue;
+    case OPEA:ip+=*(int16_t*)&memcode[ip];ip+=2;continue;
+    case CLOA:continue;//*********
+    case iEX:RTOS--;*RTOS=ip;ip=TOS;TOS=*NOS;NOS--;continue;  
+    case ZIF:if (TOS!=0) { ip+=*(int16_t*)&memcode[ip]; } ip+=2;continue;
+    case UIF:if (TOS==0) { ip+=*(int16_t*)&memcode[ip]; } ip+=2;continue;
+    case PIF:if (TOS<0) { ip+=*(int16_t*)&memcode[ip]; } ip+=2;continue;
+    case NIF:if (TOS>=0) { ip+=*(int16_t*)&memcode[ip]; } ip+=2;continue;
+    case IFL:continue;
+    case IFG:continue;
+    case IFE:continue;
+    case IFGE:continue;
+    case IFLE:continue;
+    case IFNE:continue;
+    case IFAND:continue;
+    case IFNAND:continue;
+    case IFBT:continue;
+    case iDUP:NOS++;*NOS=TOS;continue;
+    case iDROP:TOS=*NOS;NOS--;continue;
+    case iOVER:NOS++;*NOS=TOS;TOS=*(NOS-1);continue;
+    case iPICK2:NOS++;*NOS=TOS;TOS=*(NOS-2);continue;
+    case iPICK3:NOS++;*NOS=TOS;TOS=*(NOS-3);continue;
+    case iPICK4:NOS++;*NOS=TOS;TOS=*(NOS-4);continue;
+    case iSWAP:op=*NOS;*NOS=TOS;TOS=op;continue;
+    case iNIP:NOS--;continue;
+    case iROT:op=TOS;TOS=*(NOS-1);*(NOS-1)=*NOS;*NOS=op;continue;
+    case i2DUP:op=*NOS;NOS++;*NOS=TOS;NOS++;*NOS=op;continue;
+    case i2DROP:NOS--;TOS=*NOS;NOS--;continue;
+    case i3DROP:NOS-=2;TOS=*NOS;NOS--;continue;
+    case i4DROP:NOS-=3;TOS=*NOS;NOS--;continue;
+    case i2OVER:NOS++;*NOS=TOS;TOS=*(NOS-3);NOS++;*NOS=TOS;TOS=*(NOS-3);continue;
+    case i2SWAP:op=*NOS;*NOS=*(NOS-2);*(NOS-2)=op;op=TOS;TOS=*(NOS-1);*(NOS-1)=op;continue;  
+    case iFE:continue;
+    case iCFE:continue;
+    case iFEP:continue;
+    case iCFEP:continue;
+    case iST:continue;
+    case iCST:continue;
+    case iSTP:continue;
+    case iCSTP:continue;
+    case iPST:continue;
+    case iCPST:continue;
+    case iTA:REGA=TOS;TOS=*NOS;NOS--;continue;
+    case iAT:NOS++;*NOS=TOS;TOS=REGA;continue;
+    case iAFE:NOS++;*NOS=TOS;TOS=*(int32_t*)REGA;continue;
+    case iAST:*(int32_t*)REGA=TOS;TOS=*NOS;NOS--;continue;
+    case iAP:REGA+=TOS;TOS=*NOS;NOS--;continue;
+    case iAFEP:NOS++;*NOS=TOS;TOS=*(int32_t*)REGA;REGA+=4;continue;
+    case iASTP:*(int32_t*)REGA=TOS;TOS=*NOS;NOS--;REGA+=4;continue;
+    case iTB:REGB=TOS;TOS=*NOS;NOS--;continue;
+    case iBT:NOS++;*NOS=TOS;TOS=REGB;continue;
+    case iBFE:NOS++;*NOS=TOS;TOS=*(int32_t*)REGB;continue;
+    case iBST:*(int32_t*)REGB=TOS;TOS=*NOS;NOS--;continue;
+    case iBP:REGB+=TOS;TOS=*NOS;NOS--;continue;
+    case iBFEP:NOS++;*NOS=TOS;TOS=*(int32_t*)REGB;REGB+=4;continue;
+    case iBSTP:*(int32_t*)REGB=TOS;TOS=*NOS;NOS--;REGB+=4;continue;
+    case iNOT:TOS=~TOS;continue;
+    case iNEG:TOS=-TOS;continue;
+    case iABS:op=(TOS>>63);TOS=(TOS+op)^op;continue;
+    case iSQRT:continue;
+    case iCLZ:continue;
+    case iAND:TOS&=*NOS;NOS--;continue;
+    case iOR:TOS|=*NOS;NOS--;continue;
+    case iXOR:TOS^=*NOS;NOS--;continue;
+    case iADD:TOS=*NOS+TOS;NOS--;continue;
+    case iSUB:TOS=*NOS-TOS;NOS--;continue;
+    case iMUL:TOS=*NOS*TOS;NOS--;continue;
+    case iDIV:TOS=(*NOS/TOS);NOS--;continue;
+    case iMOD:TOS=*NOS%TOS;NOS--;continue;
+    case iSHL:TOS=*NOS<<TOS;NOS--;continue;
+    case iSAR:TOS=*NOS>>TOS;NOS--;continue;
+    case iSHR:TOS=((uint32_t)*NOS)>>TOS;NOS--;continue;
+    case iDMOD:op=*NOS;*NOS=op/TOS;TOS=op%TOS;continue;
+    case iMULDIV:TOS=((int64_t)(*(NOS-1))*(*NOS)/TOS);NOS-=2;continue;
+    case iMULSH:TOS=((int64_t)(*(NOS-1)*(*NOS))>>TOS);NOS-=2;continue;
+    case iSHDIV:TOS=(int64_t)((*(NOS-1)<<TOS)/(*NOS));NOS-=2;continue;
+    case iMOV:continue;
+    case iMOVA:continue;
+    case iFILL:continue;
+    case iCMOV:continue;
+    case iCMOVA:continue;
+    case iCFILL:continue;
+
+    }
+  }
+}
+
+//------------------ TOKENIZER
+
+// scan for a valid number begin in *p char
+// return number in global var "nro"
+
+int32_t nro; // for parse
+
+int isNro(char *p)
+{
+//if (*p=='&') { p++;nro=*p;return -1;} // codigo ascii
+int dig=0,signo=0,base;
+if (*p=='-') { p++;signo=1; } else if (*p=='+') p++;
+if ((unsigned char)*p<33) return 0;// no es numero
+switch(*p) {
+  case '$': base=16;p++;break;// hexa
+  case '%': base=2;p++;break;// binario
+  default:  base=10;break; 
+  }; 
+nro=0;if ((unsigned char)*p<33) return 0;// no es numero
+while ((unsigned char)*p>32) {
+  if (base!=10 && *p=='.') dig=0;  
+  else if (*p<='9') dig=*p-'0'; 
+  else if (*p>='a') dig=*p-'a'+10;  
+  else if (*p>='A') dig=*p-'A'+10;  
+  else return 0;
+  if (dig<0 || dig>=base) return 0;
+  nro*=base;nro+=dig;
+  p++;
+  };
+if (signo==1) nro=-nro;  
+return -1; 
+};
+
+// scan for a valid fixed point number begin in *p char
+// return number in global var "nro"
+
+int isNrof(char *p)         // decimal punto fijo 16.16
+{
+int64_t parte0;
+int dig=0,signo=0;
+if (*p=='-') { p++;signo=1; } else if (*p=='+') p++;
+if ((unsigned char)*p<33) return 0;// no es numero
+nro=0;
+while ((unsigned char)*p>32) {
+  if (*p=='.') { parte0=nro;nro=1;if (*(p+1)<33) return 0; } 
+  else  {
+  	if (*p<='9') dig=*p-'0'; else dig=-1;
+  	if (dig<0 || dig>9) return 0;
+  	nro=(nro*10)+dig;
+  	}
+  p++;
+  };  
+int decim=1;
+int64_t num=nro;
+while (num>1) { decim*=10;num/=10; }
+num=0x10000*nro/decim;
+nro=(num&0xffff)|(parte0<<16);
+if (signo==1) nro=-nro;
+return -1; 
+};
+
+// uppercase a char
+char toupp(char c)
+{ 
+return c&0xdf;
+}
+
+// compare two words, until space	
+int strequal(char *s1,char *s2)
+{
+while ((unsigned char)*s1>32) {
+	if (toupp(*s2++)!=toupp(*s1++)) return 0;
+	}
+if (((unsigned char)*s2)>32) return 0;
+return -1;
+}
+	
+// advance pointer with space	
+char *trim(char *s)	
+{
+while (((unsigned char)*s)<33&&*s!=0) s++;
+return s;
+}
+
+// advance to next word
+char *nextw(char *s)	
+{
+while (((unsigned char)*s)>32) s++;
+return s;
+}
+
+// advance to next line
+char *nextcr(char *s)	
+{
+while (((unsigned char)*s)>31||*s==9) s++;
+return s;
+}
+
+// advance to next string ("), admit "" for insert " in a string, multiline is ok too
+char *nextstr(char *s)
+{
+s++;
+while (*s!=0)	{
+	if (*s==34) { 
+		s++;if (*s!=34) { 
+			s++;break; } }
+	s++;
+	}
+return s;
+}
+
+// ask for a word in the core dicc
+int isCore(char *p)
+{    
+nro=0;
+char **m=(char**)wcoredic;
+while (**m!=0) {
+  if (strequal(*m,p)) return -1;
+  *m++;nro++; }
+return 0;  
+};
+
+// ask for a word in the dicc, calculate local or exported too
+int isWord(char *p) 
+{ 
+  /*
+int i=cntdicc;
+while (--i>-1) { 
+	if (strequal(dicc[i].nombre,p) && ((dicc[i].info&1)==1 || i>=dicclocal)) return i;
+	}
+ */
+return -1;
+};
+
+char *nextcom(char *) { }
+void compilaSTR(char*) {}
+void compilaCODE(char*) {}
+void compilaDATA(char*) {}
+void compilaADDR(int) {}
+void compilaLIT(int) {}
+void compilaCORE(int) {}
+void compilaWORD(int) {}
+
+void seterror(char *,char *) {}
+int level;
+int modo;
+
+// tokeniza string
+int r3token(char *str) 
+{
+level=0;
+while(*str!=0) {
+	str=trim(str);if (*str==0) return -1;
+	switch (*str) {
+		case '^':	// include
+			str=nextcr(str);break;
+		case '|':	// comments	
+			str=nextcom(str);break; 
+		case '"':	// strings		
+			compilaSTR(str);str=nextstr(str);break;
+		case ':':	// $3a :  Definicion	// :CODE
+			compilaCODE(str);str=nextw(str);break;
+		case '#':	// $23 #  Variable	// #DATA
+			compilaDATA(str);str=nextw(str);break;	
+		case 0x27:	// $27 ' Direccion	// 'ADR
+			nro=isWord(str+1);
+			if (nro<0) { 
+				if (isCore(str)) // 'ink allow compile replace
+					{ compilaCORE(nro);str=nextw(str);break; }
+				seterror(str,"adr not found");return 0; 
+				}
+			compilaADDR(nro);str=nextw(str);break;		
+		default:
+			if (isNro(str)||isNrof(str)) 
+				{ compilaLIT(nro);str=nextw(str);break; }
+			if (isCore(str)) 
+				{ compilaCORE(nro);str=nextw(str);break; }
+			nro=isWord(str);
+			//if (nro<0) { seterror(str,"word not found");return 0; }
+			if (modo==1) 
+				compilaWORD(nro); 
+			else 
+				compilaADDR(nro);
+			str=nextw(str);break;
+		}
+	}
+return -1;
+}
+
+
+int parser3(char*str) {
+}
+
 void interpreter() {
   ccr();
   cprint("ok");
@@ -229,6 +574,8 @@ cink(12);cprint("Computer ");
 cink(63);ccr();
 
 cprompt();
+
+
 }
 
 
