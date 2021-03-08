@@ -2,6 +2,8 @@
 // PHREDA 2021
 // * Use FabGL Library with 1 change (http://www.fabglib.org)W
 
+#include "SPIFFS.h" 
+
 #include "fabgl.h"
 #include "fontjrom.h"
 
@@ -36,7 +38,7 @@ uint32_t addrc=scanLine>>3;addrc=(addrc<<3)+(addrc<<5); //*40
 #endif
 uint32_t cc,*ac=&screen[addrc];
 for (byte x=SCREEN_W;x!=0;x--)	{ // 80 40
-	cc=*ac++;
+  cc=*ac++;
   c[0]=((cc>>16)&0x3f)|DisplayController.m_HVSync;
   c[1]=((cc>>24)&0x3f)|DisplayController.m_HVSync;
   if (cc&0x80000000) {  // graphics x2
@@ -67,14 +69,14 @@ if (scanLine==DisplayController.getScreenHeight()-1) { // signal end of screen
 
 // colors and atributes
 inline void cink(byte c) { cattrib=(c&0x3f)<<24|(cattrib&0xc0ffffff); }
-void cpaper(byte c) { cattrib=(c&0x3f)<<16|(cattrib&0xffc0ffff); }
-void cninv() { cattrib=cattrib&0x40000000; }
-void cinv() { cattrib=cattrib|0x40000000; }
-void cnblk() { cattrib=cattrib&0x800000; }
-void cblk() { cattrib=cattrib|0x800000; }
-void cnund() { cattrib=cattrib&0x400000; }
-void cund() { cattrib=cattrib|0x400000; }
-void cblink() { cattrib=cattrib&0xc0ffffff; }
+inline void cpaper(byte c) { cattrib=(c&0x3f)<<16|(cattrib&0xffc0ffff); }
+inline void cninv() { cattrib=cattrib&0x40000000; }
+inline void cinv() { cattrib=cattrib|0x40000000; }
+inline void cnblk() { cattrib=cattrib&0x800000; }
+inline void cblk() { cattrib=cattrib|0x800000; }
+inline void cnund() { cattrib=cattrib&0x400000; }
+inline void cund() { cattrib=cattrib|0x400000; }
+inline void cblink() { cattrib=cattrib&0xc0ffffff; }
 
 void ccls() {
 uint32_t *p=cpos=screen;
@@ -203,6 +205,7 @@ if (keyboard->virtualKeyAvailable()) {
  }  
 }
 
+
 //------------------- INTERPRETER
 
 const char *wcoredicc[]={
@@ -218,6 +221,9 @@ const char *wcoredicc[]={
 "AND","OR","XOR","+","-","*","/","MOD",
 "<<",">>",">>>","/MOD","* /","*>>","<</",
 "MOVE","MOVE>","FILL","CMOVE","CMOVE>","CFILL",
+
+"WORDS",
+""
 };
 
 enum {
@@ -233,7 +239,10 @@ iTB,iBT,iBFE,iBST,iBP,iBFEP,iBSTP,
 iNOT,iNEG,iABS,iSQRT,iCLZ,						
 iAND,iOR,iXOR,iADD,iSUB,iMUL,iDIV,iMOD,
 iSHL,iSAR,iSHR,iDMOD,iMULDIV,iMULSH,iSHDIV,
-iMOV,iMOVA,iFILL,iCMOV,iCMOVA,iCFILL
+iMOV,iMOVA,iFILL,iCMOV,iCMOVA,iCFILL,
+
+iWORDS,
+iiii
 };
 
 #define STACKSIZE 512
@@ -242,6 +251,7 @@ iMOV,iMOVA,iFILL,iCMOV,iCMOVA,iCFILL
 #define DATAMEM 0xffff
 
 int32_t stack[STACKSIZE];
+int32_t ATOS,*ANOS;
 
 struct dicctionary {
   uint64_t name;
@@ -257,13 +267,7 @@ uint32_t memc=0;
 int8_t  memdata[DATAMEM];
 uint32_t memd=0;
 
-uint32_t boot;
-
-void r3init() {
-ndicc=memc=memd=0;
-}
-
-int char6bit(int c) { return ((((c-0x1f)&0x40)>>1)|(c-0x1f))&0x3f;}
+inline int char6bit(int c) { return ((((c-0x1f)&0x40)>>1)|(c-0x1f))&0x3f;}
 
 int64_t word2code(char *str) {
 int c;
@@ -272,130 +276,233 @@ while ((c=*str++)>32) { v=(v<<6)|char6bit(c); }
 return v;
 }
 
+char wname[16];
+
+inline int bit6char(int c) { return (c&0x3f)+0x1f; }
+
+char *code2word(int64_t vname) {
+wname[15]=0;
+int i=14;
+while (vname!=0) {
+  wname[i]=bit6char((int)vname);
+  i--;vname>>=6;
+  }
+return (char*)wname;
+}
+
+void printstack() {
+for (int32_t *i=stack+1;i<=ANOS;i++) { cemit(32);cprint(dec(*i)); }
+if (stack<=ANOS) { cemit(32);cprint(dec(ATOS)); }
+} 
+
+void printwords() {
+}
+
+void r3init() {
+ndicc=memc=memd=0;
+resetr3();
+}
+
+void resetr3() {
+ATOS=0;
+ANOS=&stack[-1];
+}
 
 void runr3(int32_t boot) {
 stack[STACKSIZE-1]=0;  
-int32_t TOS=0;
-int32_t *NOS=&stack[0];
+int32_t TOS=ATOS;
+int32_t *NOS=ANOS;
 int32_t *RTOS=&stack[STACKSIZE-1];
 int32_t REGA=0;
 int32_t REGB=0;
 int32_t op=0;
 int32_t ip=boot;
-while(1) { 
+
+next:
   op=memcode[ip++]; //  printcode(op);
   switch(op&0x7f){
-    case iLIT1:NOS++;*NOS=TOS;TOS=op>>7;continue;
-    case iLIT2:NOS++;*NOS=TOS;TOS=op&0xffffff80;continue;
-    case iLITs:NOS++;*NOS=TOS;TOS=op>>7;continue;
-    case iCOM:continue;
-    case iJMPR:ip+=op>>7;continue;
-    case iJMP:ip=op>>7;continue;
-    case iCALL:RTOS--;*RTOS=ip;ip=op>>7;continue;
-    case iADR:NOS++;*NOS=TOS;TOS=op>>7;continue;
-    case iVAR:NOS++;*NOS=TOS;TOS=memdata[op>>7];continue;
-    case iEND:ip=*RTOS;RTOS++;if (ip==0) { return; } continue;  
-    case OPEB:continue;
-    case CLOB:ip+=op>>7;continue;
-    case OPEA:ip+=op>>7;continue;
-    case CLOA:NOS++;*NOS=TOS;TOS=op>>7;continue;
-    case iEX:RTOS--;*RTOS=ip;ip=TOS;TOS=*NOS;NOS--;continue;  
-    case ZIF:if (TOS!=0) {ip+=op>>7;} continue;
-    case UIF:if (TOS==0) {ip+=op>>7;} continue;
-    case PIF:if (TOS<0) {ip+=op>>7;} continue;
-    case NIF:if (TOS>=0) {ip+=op>>7;} continue;
-	case IFL:if (TOS<=*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;continue;//IFL
-	case IFG:if (TOS>=*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;continue;//IFG
-	case IFE:if (TOS!=*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;continue;//IFN	
-	case IFGE:if (TOS>*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;continue;//IFGE
-	case IFLE:if (TOS<*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;continue;//IFLE
-	case IFNE:if (TOS==*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;continue;//IFNO
-	case IFAND:if (!(TOS&*NOS)) {ip+=(op>>7);} TOS=*NOS;NOS--;continue;//IFNA
-	case IFNAND:if (TOS&*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;continue;//IFAN
-	case IFBT:if (*(NOS-1)>TOS||*(NOS-1)<*NOS) {ip+=(op>>7);} TOS=*(NOS-1);NOS-=2;continue;//BTW 
-    case iDUP:NOS++;*NOS=TOS;continue;
-    case iDROP:TOS=*NOS;NOS--;continue;
-    case iOVER:NOS++;*NOS=TOS;TOS=*(NOS-1);continue;
-    case iPICK2:NOS++;*NOS=TOS;TOS=*(NOS-2);continue;
-    case iPICK3:NOS++;*NOS=TOS;TOS=*(NOS-3);continue;
-    case iPICK4:NOS++;*NOS=TOS;TOS=*(NOS-4);continue;
-    case iSWAP:op=*NOS;*NOS=TOS;TOS=op;continue;
-    case iNIP:NOS--;continue;
-    case iROT:op=TOS;TOS=*(NOS-1);*(NOS-1)=*NOS;*NOS=op;continue;
-    case i2DUP:op=*NOS;NOS++;*NOS=TOS;NOS++;*NOS=op;continue;
-    case i2DROP:NOS--;TOS=*NOS;NOS--;continue;
-    case i3DROP:NOS-=2;TOS=*NOS;NOS--;continue;
-    case i4DROP:NOS-=3;TOS=*NOS;NOS--;continue;
-    case i2OVER:NOS++;*NOS=TOS;TOS=*(NOS-3);NOS++;*NOS=TOS;TOS=*(NOS-3);continue;
-    case i2SWAP:op=*NOS;*NOS=*(NOS-2);*(NOS-2)=op;op=TOS;TOS=*(NOS-1);*(NOS-1)=op;continue;  
-    case iFE:TOS=*(int*)&memdata[TOS];continue;
-    case iCFE:TOS=*(char*)&memdata[TOS];continue;
-    case iFEP:NOS++;*NOS=TOS+4;TOS=*(int*)&memdata[TOS];continue;
-    case iCFEP:NOS++;*NOS=TOS+1;TOS=*(char*)&memdata[TOS];continue;
-    case iST:*(int*)&memdata[TOS]=(int)*NOS;NOS--;TOS=*NOS;NOS--;continue;
-    case iCST:memdata[TOS]=(char)*NOS;NOS--;TOS=*NOS;NOS--;continue;
-    case iSTP:*(int*)&memdata[TOS]=*NOS;NOS--;TOS+=4;continue;
-    case iCSTP:memdata[TOS]=(char)*NOS;NOS--;TOS+=1;continue;
-    case iPST:*(int*)&memdata[TOS]+=*NOS;NOS--;TOS=*NOS;NOS--;continue;
-    case iCPST:memdata[TOS]+=*NOS;NOS--;TOS=*NOS;NOS--;continue;
-    case iTA:REGA=TOS;TOS=*NOS;NOS--;continue;
-    case iAT:NOS++;*NOS=TOS;TOS=REGA;continue;
-    case iAFE:NOS++;*NOS=TOS;TOS=*(int32_t*)&memdata[REGA];continue;
-    case iAST:*(int32_t*)&memdata[REGA]=TOS;TOS=*NOS;NOS--;continue;
-    case iAP:REGA+=TOS;TOS=*NOS;NOS--;continue;
-    case iAFEP:NOS++;*NOS=TOS;TOS=*(int32_t*)&memdata[REGA];REGA+=4;continue;
-    case iASTP:*(int32_t*)&memdata[REGA]=TOS;TOS=*NOS;NOS--;REGA+=4;continue;
-    case iTB:REGB=TOS;TOS=*NOS;NOS--;continue;
-    case iBT:NOS++;*NOS=TOS;TOS=REGB;continue;
-    case iBFE:NOS++;*NOS=TOS;TOS=*(int32_t*)&memdata[REGB];continue;
-    case iBST:*(int32_t*)&memdata[REGB]=TOS;TOS=*NOS;NOS--;continue;
-    case iBP:REGB+=TOS;TOS=*NOS;NOS--;continue;
-    case iBFEP:NOS++;*NOS=TOS;TOS=*(int32_t*)&memdata[REGB];REGB+=4;continue;
-    case iBSTP:*(int32_t*)&memdata[REGB]=TOS;TOS=*NOS;NOS--;REGB+=4;continue;
-    case iNOT:TOS=~TOS;continue;
-    case iNEG:TOS=-TOS;continue;
-    case iABS:op=(TOS>>63);TOS=(TOS+op)^op;continue;
-    case iSQRT:TOS=(int)sqrt(TOS);continue;
-    case iCLZ:TOS=__builtin_clz(TOS);continue;
-    case iAND:TOS&=*NOS;NOS--;continue;
-    case iOR:TOS|=*NOS;NOS--;continue;
-    case iXOR:TOS^=*NOS;NOS--;continue;
-    case iADD:TOS=*NOS+TOS;NOS--;continue;
-    case iSUB:TOS=*NOS-TOS;NOS--;continue;
-    case iMUL:TOS=*NOS*TOS;NOS--;continue;
-    case iDIV:TOS=(*NOS/TOS);NOS--;continue;
-    case iMOD:TOS=*NOS%TOS;NOS--;continue;
-    case iSHL:TOS=*NOS<<TOS;NOS--;continue;
-    case iSAR:TOS=*NOS>>TOS;NOS--;continue;
-    case iSHR:TOS=((uint32_t)*NOS)>>TOS;NOS--;continue;
-    case iDMOD:op=*NOS;*NOS=op/TOS;TOS=op%TOS;continue;
-    case iMULDIV:TOS=((int64_t)(*(NOS-1))*(*NOS)/TOS);NOS-=2;continue;
-    case iMULSH:TOS=((int64_t)(*(NOS-1)*(*NOS))>>TOS);NOS-=2;continue;
-    case iSHDIV:TOS=(int64_t)((*(NOS-1)<<TOS)/(*NOS));NOS-=2;continue;
-    case iMOV:continue;
-    case iMOVA:continue;
-    case iFILL:continue;
-    case iCMOV:continue;
-    case iCMOVA:continue;
-    case iCFILL:continue;
-
-    }
+    case iLIT1:NOS++;*NOS=TOS;TOS=op>>7;goto next;
+    case iLIT2:NOS++;*NOS=TOS;TOS=op&0xffffff80;goto next;
+    case iLITs:NOS++;*NOS=TOS;TOS=op>>7;goto next;
+    case iCOM:goto next;
+    case iJMPR:ip+=op>>7;goto next;
+    case iJMP:ip=op>>7;goto next;
+    case iCALL:RTOS--;*RTOS=ip;ip=op>>7;goto next;
+    case iADR:NOS++;*NOS=TOS;TOS=op>>7;goto next;
+    case iVAR:NOS++;*NOS=TOS;TOS=memdata[op>>7];goto next;
+    case iEND:ip=*RTOS;RTOS++;if (ip==0) { ATOS=TOS;ANOS=NOS;return; } goto next;  
+    case OPEB:goto next;
+    case CLOB:ip+=op>>7;goto next;
+    case OPEA:ip+=op>>7;goto next;
+    case CLOA:NOS++;*NOS=TOS;TOS=op>>7;goto next;
+    case iEX:RTOS--;*RTOS=ip;ip=TOS;TOS=*NOS;NOS--;goto next;  
+    case ZIF:if (TOS!=0) {ip+=op>>7;} goto next;
+    case UIF:if (TOS==0) {ip+=op>>7;} goto next;
+    case PIF:if (TOS<0) {ip+=op>>7;} goto next;
+    case NIF:if (TOS>=0) {ip+=op>>7;} goto next;
+	case IFL:if (TOS<=*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;goto next;//IFL
+	case IFG:if (TOS>=*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;goto next;//IFG
+	case IFE:if (TOS!=*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;goto next;//IFN	
+	case IFGE:if (TOS>*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;goto next;//IFGE
+	case IFLE:if (TOS<*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;goto next;//IFLE
+	case IFNE:if (TOS==*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;goto next;//IFNO
+	case IFAND:if (!(TOS&*NOS)) {ip+=(op>>7);} TOS=*NOS;NOS--;goto next;//IFNA
+	case IFNAND:if (TOS&*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;goto next;//IFAN
+	case IFBT:if (*(NOS-1)>TOS||*(NOS-1)<*NOS) {ip+=(op>>7);} TOS=*(NOS-1);NOS-=2;goto next;//BTW 
+    case iDUP:NOS++;*NOS=TOS;goto next;
+    case iDROP:TOS=*NOS;NOS--;goto next;
+    case iOVER:NOS++;*NOS=TOS;TOS=*(NOS-1);goto next;
+    case iPICK2:NOS++;*NOS=TOS;TOS=*(NOS-2);goto next;
+    case iPICK3:NOS++;*NOS=TOS;TOS=*(NOS-3);goto next;
+    case iPICK4:NOS++;*NOS=TOS;TOS=*(NOS-4);goto next;
+    case iSWAP:op=*NOS;*NOS=TOS;TOS=op;goto next;
+    case iNIP:NOS--;goto next;
+    case iROT:op=TOS;TOS=*(NOS-1);*(NOS-1)=*NOS;*NOS=op;goto next;
+    case i2DUP:op=*NOS;NOS++;*NOS=TOS;NOS++;*NOS=op;goto next;
+    case i2DROP:NOS--;TOS=*NOS;NOS--;goto next;
+    case i3DROP:NOS-=2;TOS=*NOS;NOS--;goto next;
+    case i4DROP:NOS-=3;TOS=*NOS;NOS--;goto next;
+    case i2OVER:NOS++;*NOS=TOS;TOS=*(NOS-3);NOS++;*NOS=TOS;TOS=*(NOS-3);goto next;
+    case i2SWAP:op=*NOS;*NOS=*(NOS-2);*(NOS-2)=op;op=TOS;TOS=*(NOS-1);*(NOS-1)=op;goto next;  
+    case iFE:TOS=*(int*)&memdata[TOS];goto next;
+    case iCFE:TOS=*(char*)&memdata[TOS];goto next;
+    case iFEP:NOS++;*NOS=TOS+4;TOS=*(int*)&memdata[TOS];goto next;
+    case iCFEP:NOS++;*NOS=TOS+1;TOS=*(char*)&memdata[TOS];goto next;
+    case iST:*(int*)&memdata[TOS]=(int)*NOS;NOS--;TOS=*NOS;NOS--;goto next;
+    case iCST:memdata[TOS]=(char)*NOS;NOS--;TOS=*NOS;NOS--;goto next;
+    case iSTP:*(int*)&memdata[TOS]=*NOS;NOS--;TOS+=4;goto next;
+    case iCSTP:memdata[TOS]=(char)*NOS;NOS--;TOS+=1;goto next;
+    case iPST:*(int*)&memdata[TOS]+=*NOS;NOS--;TOS=*NOS;NOS--;goto next;
+    case iCPST:memdata[TOS]+=*NOS;NOS--;TOS=*NOS;NOS--;goto next;
+    case iTA:REGA=TOS;TOS=*NOS;NOS--;goto next;
+    case iAT:NOS++;*NOS=TOS;TOS=REGA;goto next;
+    case iAFE:NOS++;*NOS=TOS;TOS=*(int32_t*)&memdata[REGA];goto next;
+    case iAST:*(int32_t*)&memdata[REGA]=TOS;TOS=*NOS;NOS--;goto next;
+    case iAP:REGA+=TOS;TOS=*NOS;NOS--;goto next;
+    case iAFEP:NOS++;*NOS=TOS;TOS=*(int32_t*)&memdata[REGA];REGA+=4;goto next;
+    case iASTP:*(int32_t*)&memdata[REGA]=TOS;TOS=*NOS;NOS--;REGA+=4;goto next;
+    case iTB:REGB=TOS;TOS=*NOS;NOS--;goto next;
+    case iBT:NOS++;*NOS=TOS;TOS=REGB;goto next;
+    case iBFE:NOS++;*NOS=TOS;TOS=*(int32_t*)&memdata[REGB];goto next;
+    case iBST:*(int32_t*)&memdata[REGB]=TOS;TOS=*NOS;NOS--;goto next;
+    case iBP:REGB+=TOS;TOS=*NOS;NOS--;goto next;
+    case iBFEP:NOS++;*NOS=TOS;TOS=*(int32_t*)&memdata[REGB];REGB+=4;goto next;
+    case iBSTP:*(int32_t*)&memdata[REGB]=TOS;TOS=*NOS;NOS--;REGB+=4;goto next;
+    case iNOT:TOS=~TOS;goto next;
+    case iNEG:TOS=-TOS;goto next;
+    case iABS:op=(TOS>>63);TOS=(TOS+op)^op;goto next;
+    case iSQRT:TOS=(int)sqrt(TOS);goto next;
+    case iCLZ:TOS=__builtin_clz(TOS);goto next;
+    case iAND:TOS&=*NOS;NOS--;goto next;
+    case iOR:TOS|=*NOS;NOS--;goto next;
+    case iXOR:TOS^=*NOS;NOS--;goto next;
+    case iADD:TOS=*NOS+TOS;NOS--;goto next;
+    case iSUB:TOS=*NOS-TOS;NOS--;goto next;
+    case iMUL:TOS=*NOS*TOS;NOS--;goto next;
+    case iDIV:TOS=(*NOS/TOS);NOS--;goto next;
+    case iMOD:TOS=*NOS%TOS;NOS--;goto next;
+    case iSHL:TOS=*NOS<<TOS;NOS--;goto next;
+    case iSAR:TOS=*NOS>>TOS;NOS--;goto next;
+    case iSHR:TOS=((uint32_t)*NOS)>>TOS;NOS--;goto next;
+    case iDMOD:op=*NOS;*NOS=op/TOS;TOS=op%TOS;goto next;
+    case iMULDIV:TOS=((int64_t)(*(NOS-1))*(*NOS)/TOS);NOS-=2;goto next;
+    case iMULSH:TOS=((int64_t)(*(NOS-1)*(*NOS))>>TOS);NOS-=2;goto next;
+    case iSHDIV:TOS=(int64_t)((*(NOS-1)<<TOS)/(*NOS));NOS-=2;goto next;
+    case iMOV:goto next;
+    case iMOVA:goto next;
+    case iFILL:goto next;
+    case iCMOV:goto next;
+    case iCMOVA:goto next;
+    case iCFILL:goto next;
+	
+	case iWORDS:xwords();goto next;
+	// case LIST
+	// case EDIT
+	// case FORGET
+	// case CSAVE
+	// case CLOAD
+	// case CNEW
+	// case MEM
+	// case MEMFONT
+	// case MEMCONS
+	
+	// case SLEEP
+	// case MSEC
+	// case TIME
+	// case DATE
+	// case INK
+	// case PAPER
+	// case CLS
+	// case ATXY
+	// case EMIT
+	
+	// case KEY
+	// case CHAR
+	// case XYPEN
+	// case BPEN
+/*
+// FILES
+  File dir = SPIFFS.open("/");
+  File entry =  dir.openNextFile();
+  entry.name()
+  entry.size()
+  entry.isDirectory()
+  entry.close()
+  file = SPIFFS.open("/test.txt", "w");
+    file.println("Hello From ESP32 :-)");
+  file.close();
+  SPIFFS.remove(path)
+  SPIFFS.end()//*** NO
+  
+   while(file.available()){
+    Serial.write(file.read());
   }
+// TIME
+time_t now;
+char strftime_buf[64];
+struct tm timeinfo;
+
+time(&now);
+// Set timezone to China Standard Time
+setenv("TZ", "CST-8", 1);
+tzset();
+
+localtime_r(&now, &timeinfo);
+strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
+ESP_LOGI(TAG, "The current date/time in Shanghai is: %s", strftime_buf);
+
+// MSEC
+struct timeval tv_now;
+gettimeofday(&tv_now, NULL);
+int64_t time_us = (int64_t)tv_now.tv_sec * 1000000L + (int64_t)tv_now.tv_usec;
+
+*/	
+	
+    }
+
 }
 
+void xwords() {
+int i=0;
+while (wcoredicc[i][0]!=0) {
+  cprint((char*)wcoredicc[i]);cemit(32);
+  i++;}
+for (i=0;i<ndicc;i++) {
+  cprint(code2word(dicc[i].name));cemit(32);    
+  }
+}
 //------------------ TOKENIZER
 
 int32_t nro; // for parse
 int level;
 int modo;
-
 int cntstacka;
-int stacka[32];
+int stacka[8];
 int lastblock;
 
-void iniA(void) { cntstacka=0; }
-void pushA(int n) { stacka[cntstacka++]=n; }
-int popA(void) { return stacka[--cntstacka]; }
+inline void iniA(void) { cntstacka=0; }
+inline void pushA(int n) { stacka[cntstacka++]=n; }
+inline int popA(void) { return stacka[--cntstacka]; }
 
 
 // scan for a valid number begin in *p char
@@ -454,7 +561,7 @@ return -1;
 };
 
 // uppercase a char
-char toupp(char c) { return c&0xdf; }
+inline char toupp(char c) { return c&0xdf; }
 
 // compare two words, until space	
 int strequal(char *s1,char *s2)
@@ -491,12 +598,11 @@ return 0;
 
 // ask for a word in the dicc, calculate local or exported too
 int isWord(char *p) { 
-  /*
-int i=cntdicc;
+int64_t w=word2code(p);
+int i=ndicc;
 while (--i>-1) { 
-	if (strequal(dicc[i].nombre,p) && ((dicc[i].info&1)==1 || i>=dicclocal)) return i;
+	if (dicc[i].name==w) return i; //&& ((dicc[i].info&1)==1 || i>=dicclocal)) return i;
 	}
- */
 return -1;
 };
 
@@ -512,7 +618,7 @@ void compilaCODE(char *str) {
 int ex=0;
 closevar();
 if (*(str+1)==':') { ex=1;str++; } // exported
-if (*(str+1)<33) { boot=memc; }
+//if (*(str+1)<33) { boot=memc; }
 dicc[ndicc].name=word2code(str);
 dicc[ndicc].mem=(ex<<31)|memc;
 ndicc++;
@@ -562,8 +668,7 @@ codetok((n<<7)|iLIT1);
 }
 
 // dicc base in data definition
-void dataMAC(int n)
-{
+void dataMAC(int n) {
 if (n==1) modo=4; // (	bytes
 if (n==2) modo=2; // )
 if (n==iMUL) modo=3; // * reserva bytes 
@@ -571,15 +676,13 @@ if (n==iMUL) modo=3; // * reserva bytes
 
 
 // Start block code (
-void blockIn(void)
-{
+void blockIn(void) {
 pushA(memc);
 level++;
 }
 
 // solve conditional void
-int solvejmp(int from,int to) 
-{
+int solvejmp(int from,int to) {
 int whi=false;
 for (int i=from;i<to;i++) {
 	int op=memcode[i]&0x7f;
@@ -592,8 +695,7 @@ return whi;
 }
 
 // end block )
-void blockOut(void)
-{
+void blockOut(void) {
 int from=popA();
 int dist=memc-from;
 if (solvejmp(from,memc)) { // salta
@@ -606,16 +708,14 @@ lastblock=memc;
 }
 
 // start anonymous definition (adress only word)
-void anonIn(void)
-{
+void anonIn(void) {
 pushA(memc);
-codetok(iJMP);	
+codetok(iJMP);
 level++;	
 }
 
 // end anonymous definition, save adress in stack
-void anonOut(void)
-{
+void anonOut(void) {
 int from=popA();
 memcode[from]|=(memc<<7);  // patch jmp
 codetok((from+1)<<7|iLIT1);
@@ -637,11 +737,11 @@ if (n==1) { blockIn();return; }		//(	etiqueta
 if (n==2) { blockOut();return; }	//)	salto
 if (n==3) { anonIn();return; }		//[	salto:etiqueta
 if (n==4) { anonOut();return; }		//]	etiqueta;push
-
 //int token=memcode[memc-1];
 
 codetok(n+9);		
 }
+
 void compilaWORD(int) {
 	cprint("WORDS ");
 }
@@ -698,11 +798,14 @@ ccr();
 }
 
 void interpreter() {
-ccr();cprint("Parsing...");ccr();
+ccr();
+//cprint("Parsing...");ccr();
 int error=r3token(inputpad);
-
-
-ccr();dump();ccr();
+codetok(iEND);
+runr3(0);
+memc=0;
+ccr();printstack();ccr();
+//dump();ccr();
 cprint("ok");
 cprompt();
 }
@@ -715,6 +818,13 @@ void setup()
 mainTaskHandle = xTaskGetCurrentTaskHandle();
 PS2Controller.begin(PS2Preset::KeyboardPort0); //PS2Preset::KeyboardPort0_MousePort1);
 //keyboard->suspendVirtualKeyGeneration(false);
+auto keyboard = PS2Controller.keyboard();
+//        keyboard->setLayout(&fabgl::USLayout);
+//        keyboard->setLayout(&fabgl::UKLayout);
+//        keyboard->setLayout(&fabgl::GermanLayout);
+//        keyboard->setLayout(&fabgl::ItalianLayout);
+        keyboard->setLayout(&fabgl::SpanishLayout);
+        
 DisplayController.begin();
 DisplayController.setDrawScanlineCallback(drawScanline);
 
@@ -736,8 +846,23 @@ ccls();
 cink(60);cprint("ESP32 ");
 cink(3);cprint("Forth ");
 cink(12);cprint("Computer ");
-cink(63);ccr();
+cink(32);ccr();
+cprint("PHREDA - Mem:");
+//cprint(dec(heap_caps_get_free_size(MALLOC_CAP_DMA)>>10));
+cprint(dec(heap_caps_get_free_size(MALLOC_CAP_32BIT)>>10));
+cprint("Kb");
+ccr();
+/*
+if (SPIFFS.begin()){
+	cprint("SPIFFS mounted ");
+	cprint(dec(SPIFFS.usedBytes()));
+	cprint("/");
+	cprint(dec(SPIFFS.totalBytes()));
+	cprint(" bytes");		
+}else{ cprint("SPIFFS error!"); }
+*/
 
+cink(63);
 cprompt();
 }
 
