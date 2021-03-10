@@ -139,9 +139,11 @@ return p;
 }
 
 //------------------- PAD
-char inputpad[256];
+#define CMAX 255
+char inputpad[CMAX+1];
+
 uint32_t *cposinp;
-uint32_t cmax,ccur,cfin;
+uint32_t ccur,cfin;
 
 int level;
 int modo;
@@ -210,14 +212,14 @@ if (down) {
 //  if (vk==fabgl::VK_UP) { kbac(); }  
 //  if (vk==fabgl::VK_DOWN) { kbac(); }  
 //  if (vk==fabgl::VK_PAGEUP) { kbac(); }  
-//  if (vk==fabgl::VK_PAGEDOWN) { kbac(); }  
-		}
-	cpos=cposinp;
-	cprint(inputpad);cprint(" ");
-	cpos=cposinp+ccur;
-	while (cpos+1>=&screen[SCREEN_SIZE]) { cpos-=40;cposinp-=40; }	// scroll??
-	ccursorb=*cpos;*(cpos)|=0x800000; // blink in cursor
+// 	if (vk==fabgl::VK_PAGEDOWN) { kbac(); }  
 	}
+  cpos=cposinp;
+  cprint(inputpad);cprint(" ");
+  cpos=cposinp+ccur;
+  while (cpos+1>=&screen[SCREEN_SIZE]) { cpos-=40;cposinp-=40; }	// scroll??
+  ccursorb=*cpos;*(cpos)|=0x800000; // blink in cursor
+  }
 }
 
 //------------------- INTERPRETER
@@ -236,14 +238,17 @@ const char *wcoredicc[]={
 "<<",">>",">>>","/MOD","* /","*>>","<</",
 "MOVE","MOVE>","FILL","CMOVE","CMOVE>","CFILL",
 
-"WORDS",".S",
+"WORDS",".S","LIST","EDIT","DUMP",
+"MEM",
+"MSEC","TIME","DATE",
+
 "INK","PAPER","CLS","ATXY","EMIT","PRINT","CR",
 ""
 };
 
-#define INTERNALWORDS 9
+#define INTERNALWORDS 13
 enum {
-iLIT1,iLIT2,iLITs,iCOM,iJMPR,iJMP,iCALL,iVAR,iADR, // internal
+iLITd,iLITh,iLITb,iLITf,iLIT2,iLITs,iCOM,iJMPR,iJMP,iCALL,iVAR,iADR,iADRv, // internal
  
 iEND,OPEB,CLOB,OPEA,CLOA,iEX,ZIF,UIF,PIF,NIF,
 IFL,IFG,IFE,IFGE,IFLE,IFNE,IFAND,IFNAND,IFBT,
@@ -257,7 +262,14 @@ iAND,iOR,iXOR,iADD,iSUB,iMUL,iDIV,iMOD,
 iSHL,iSAR,iSHR,iDMOD,iMULDIV,iMULSH,iSHDIV,
 iMOV,iMOVA,iFILL,iCMOV,iCMOVA,iCFILL,
 
-iWORDS,iSTACK,
+iWORDS,iSTACK,iLIST,iEDIT,iDUMP,
+iMEM,
+	// iMEMFONT
+	// iMEMCONS
+	
+	// iSLEEP
+iMSEC,iTIME,iIDATE,
+
 iINK,iPAPER,iCLS,iATXY,iEMIT,iPRINT,iCR,
 
 iiii, // last real
@@ -273,7 +285,7 @@ int32_t ATOS,*ANOS;
 
 struct dicctionary {
   uint64_t name;
-  uint32_t mem;
+  uint32_t mem; // $c info 3ff len fffff adr
 };
 
 dicctionary dicc[DICCMEM];
@@ -308,8 +320,10 @@ while (vname!=0) {
 return (char*)&wname[i+1];
 }
 
+
 void r3init() {
-ndicc=memc=memd=0;
+ndicc=0;
+memc=memd=0;
 resetr3();
 }
 
@@ -317,6 +331,10 @@ void resetr3() {
 ATOS=0;
 ANOS=&stack[-1];
 }
+
+time_t now;
+struct tm timeinfo;
+struct timeval tv_now;
 
 void runr3(int32_t boot) {
 stack[STACKSIZE-1]=0;  
@@ -331,15 +349,19 @@ register int32_t ip=boot;
 next:
   op=memcode[ip++]; //  printcode(op);
   switch(op&0x7f){
-    case iLIT1:NOS++;*NOS=TOS;TOS=op>>8;goto next;
-    case iLIT2:NOS++;*NOS=TOS;TOS=op&0xffffff80;goto next;
+    case iLITd:NOS++;*NOS=TOS;TOS=op>>8;goto next;
+    case iLITh:NOS++;*NOS=TOS;TOS=op>>8;goto next;
+    case iLITb:NOS++;*NOS=TOS;TOS=op>>8;goto next;
+	case iLITf:NOS++;*NOS=TOS;TOS=op>>8;goto next;
+    case iLIT2:TOS^=(op<<16)&0xff000000;goto next;
     case iLITs:NOS++;*NOS=TOS;TOS=op>>8;goto next;
     case iCOM:goto next;
     case iJMPR:ip+=op>>8;goto next;
     case iJMP:ip=op>>8;goto next;
     case iCALL:RTOS--;*RTOS=ip;ip=op>>8;goto next;
-    case iVAR:NOS++;*NOS=TOS;TOS=memdata[op>>8];goto next;
+    case iVAR:NOS++;*NOS=TOS;TOS=*(int32_t*)&memdata[op>>8];goto next;
     case iADR:NOS++;*NOS=TOS;TOS=op>>8;goto next;
+    case iADRv:NOS++;*NOS=TOS;TOS=op>>8;goto next;	
 	
     case iEND:ip=*RTOS;RTOS++;if (ip==0) { ATOS=TOS;ANOS=NOS;return; } goto next;  
     case OPEB:goto next;
@@ -427,21 +449,29 @@ next:
     case iCFILL:goto next;
 	
 	case iWORDS:xwords();goto next;
-  case iSTACK:xstack();goto next;
-	// case iLIST
-	// case iEDIT
+	case iSTACK:xstack();goto next;
+	case iLIST:xlist(memcode[ip-2]);goto next;
+	case iEDIT:xedit(memcode[ip-2]);goto next;	
+  case iDUMP:dump();goto next;
 	// case iFORGET
 	// case iCSAVE
 	// case iCLOAD
 	// case iCNEW
-	// case iMEM
+	
+	case iMEM:NOS++;*NOS=TOS;TOS=memd;goto next;
 	// case iMEMFONT
 	// case iMEMCONS
 	
 	// case iSLEEP
-	// case iMSEC
-	// case iTIME
-	// case iDATE
+	case iMSEC://"MSEC"
+		NOS++;*NOS=TOS;TOS=millis();goto next;
+	case iTIME://"TIME"
+		time(&now);localtime_r(&now, &timeinfo);
+		NOS++;*NOS=TOS;TOS=(timeinfo.tm_hour<<16)|(timeinfo.tm_min<<8)|timeinfo.tm_sec;goto next;
+	case iIDATE://"DATE"
+		time(&now);localtime_r(&now, &timeinfo);
+		NOS++;*NOS=TOS;TOS=(timeinfo.tm_year+1900)<<16|(timeinfo.tm_mon+1)<<8|timeinfo.tm_mday;goto next;
+	
  
 	case iINK:cink(TOS);TOS=*NOS;NOS--;goto next;
 	case iPAPER:cpaper(TOS);TOS=*NOS;NOS--;goto next;
@@ -455,42 +485,37 @@ next:
 	// case CHAR
 	// case XYPEN
 	// case BPEN
-/*
-// FILES
-  File dir = SPIFFS.open("/");
-  File entry =  dir.openNextFile();
-  entry.name()
-  entry.size()
-  entry.isDirectory()
-  entry.close()
-  
-  file = SPIFFS.open("/test.txt", "w");
-    file.println("Hello From ESP32 :-)");
-  file.close();
-  
-  SPIFFS.remove(path)
-  
-   while(file.available()){
-    Serial.write(file.read());
-  }
-// TIME
-time_t now;
-char strftime_buf[64];
-struct tm timeinfo;
+	
+	
+/*	
+	case iLOAD:
+		file = SPIFFS.open("/test.txt", "r");
+		//file.available()){
+		file.read();
+		file.close();
+		goto next;
+	case iSAVE:
+		//SPIFFS.remove(path)
+		file = SPIFFS.open("/test.txt", "w");
+		file.println("Hello From ESP32 :-)");
+		file.close();
+		goto next;
+	case iAPEND:
+		file = SPIFFS.open("/test.txt", "a");
+		file.println("Hello From ESP32 :-)");
+		file.close();
+		goto next;
 
-time(&now);
-// Set timezone to China Standard Time
-setenv("TZ", "CST-8", 1);
-tzset();
-
-localtime_r(&now, &timeinfo);
-strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
-ESP_LOGI(TAG, "The current date/time in Shanghai is: %s", strftime_buf);
-
-// MSEC
-struct timeval tv_now;
-gettimeofday(&tv_now, NULL);
-int64_t time_us = (int64_t)tv_now.tv_sec * 1000000L + (int64_t)tv_now.tv_usec;
+	case iDIR:
+		File dir = SPIFFS.open("/");
+		File entry =  dir.openNextFile();
+		entry.name()
+		entry.size()
+		entry.isDirectory()
+		entry.close()
+		goto next;
+	case iDNAME
+	case iDSIZE
 
 */	
     }
@@ -517,17 +542,96 @@ if (stack<=ANOS) { cpaper(0);cemit(32);cpaper(52);cprint(dec(ATOS)); }
 cpaper(0);ccr();
 } 
 
+// ----
+void emitcr(char *s) { 
+while (((unsigned char)*s)>31||*s==9) { cemit(*s++); } 
+}
 
+void emitstr(char *s) { 
+while (*s!=0) { cemit(*s++); }
+}
+
+// search word by address
+int a2dicc(int32_t mem,int flag) {
+for (int i=0;i<ndicc;i++) {
+  if ((dicc[i].mem&0xfffff)==mem && (dicc[i].mem&0x80000000)==flag) return i;
+  }
+return -1;
+}
+
+void tokenprint(int op) {
+if ((op&0xff)>=INTERNALWORDS) {
+  cink(7);
+	cprint((char*)wcoredicc[(op&0xff)-INTERNALWORDS]);
+} else {
+	switch (op&0xff) {
+    case iLITd:cink(15);cprint(dec(op>>8));break;
+    case iLITh:cink(15);cprint("$");cprint(hex(op>>8));break;
+    case iLITb:cink(15);cprint("%");cprint(bin(op>>8));break;
+    case iLITf:cink(15);cprint(fix(op>>8));break;	
+    case iLIT2:break;
+    case iLITs:cink(63);cemit(34);emitstr((char*)&memdata[op>>8]);cemit(34);break;
+    case iCOM:cink(21);cprint("|");emitcr((char*)&memdata[op>>8]);break;
+    case iJMPR:cprint(dec(op>>8));break;
+    case iJMP:cprint(dec(op>>8));break;
+    case iCALL:cink(12);cprint(code2word(dicc[a2dicc(op>>8,0)].name));break;
+    case iVAR:cink(12);cprint(code2word(dicc[a2dicc(op>>8,0x80000000)].name));break;
+    case iADR:cink(60);cprint("'");cprint(code2word(dicc[a2dicc(op>>8,0)].name));break;
+    case iADRv:cink(60);cprint("'");cprint(code2word(dicc[a2dicc(op>>8,0x80000000)].name));break;
+		}
+	}
+cemit(32);
+}
+
+
+void printword(int w) {
+cink(3);cprint(":"); 
+cprint(code2word(dicc[w].name));cemit(32);
+int it=dicc[w].mem&0xfffff;
+for (int i=0;i<(dicc[w].mem>>20)&0x3ff;i++) {
+  tokenprint(memcode[it++]); }
+ccr();
+}
+
+void printvar(int w) {
+cink(51);cprint("#"); 
+cprint(code2word(dicc[w].name));cemit(32);
+int *it=(int*)&memdata[dicc[w].mem&0xfffff];
+for (int i=((dicc[w].mem>>20)&0x3ff)>>2;i>0;i--) {
+  cemit(32);cprint(dec(*it++)); }
+ccr();
+}
+
+void xlist(int token) {
+int w;
+if ((token&0xff)==iADR) {
+	w=a2dicc(token>>8,0x00000000);
+	printword(w);
+	return;
+} else if ((token&0xff)==iADRv) {
+	w=a2dicc(token>>8,0x80000000);	
+	printvar(w);
+	return;
+	} 
+ccr();
+for (int i=0;i<ndicc;i++) {
+	if (dicc[i].mem&0x80000000) printvar(i); else printword(i);
+	}
+}
+
+void xedit(int token) {
+}
 //------------------ TOKENIZER
 
 int32_t nro; // for parse
+int32_t base; // for parse
 
 // scan for a valid number begin in *p char
 // return number in global var "nro"
 int isNro(char *p)
 {
 //if (*p=='&') { p++;nro=*p;return -1;} // codigo ascii
-int dig=0,signo=0,base;
+int dig=0,signo=0;
 if (*p=='-') { p++;signo=1; } else if (*p=='+') p++;
 if ((unsigned char)*p<33) return 0;// no es numero
 switch(*p) {
@@ -574,6 +678,7 @@ while (num>1) { decim*=10;num/=10; }
 num=0x10000*nro/decim;
 nro=(num&0xffff)|(parte0<<16);
 if (signo==1) nro=-nro;
+base=32;
 return -1; 
 };
 
@@ -628,6 +733,7 @@ if (ndicc==0) return;
 if (!dicc[ndicc-1].mem&0x80000000) return; // prev is var
 if ((dicc[ndicc-1].mem&0xfffff)<memd) return;  		// have val
 memdata[memd]=0;memd+=4;	
+dicc[ndicc-1].mem+=0x400000;
 }
 
 void compilaCODE(char *str) {
@@ -636,7 +742,7 @@ closevar();
 if (*(str+1)==':') { ex=1;str++; } // exported
 //if (*(str+1)<33) { boot=memc; }
 dicc[ndicc].name=word2code(str+1);
-dicc[ndicc].mem=(ex<<31)|memc;
+dicc[ndicc].mem=(ex<<30)|memc;
 ndicc++;
 modo=1;
 }
@@ -646,7 +752,7 @@ int ex=0;
 closevar();
 if (*(str+1)=='#') { ex=1;str++; } // exported
 dicc[ndicc].name=word2code(str+1);
-dicc[ndicc].mem=0x80000000|(ex<<31)|memd;
+dicc[ndicc].mem=0x80000000|(ex<<30)|memd;
 ndicc++;
 modo=2;
 }
@@ -680,9 +786,9 @@ if (modo<2) codetok((ini<<8)+iLITs); // lit data
 void datanro(int32_t n) { 
 int8_t *p=&memdata[memd];	
 switch(modo){
-	case 2:*(int*)p=(int)n;memd+=4;break;
-	case 3:	for(int i=0;i<n;i++) { *p++=0; };memd+=n;break;
-	case 4:*p=(char)n;memd+=1;break;
+	case 2:*(int*)p=(int)n;memd+=4;dicc[ndicc-1].mem+=0x400000;break;
+	case 3:	for(int i=0;i<n;i++) { *p++=0; };memd+=n;dicc[ndicc-1].mem+=n<<20;break;
+	case 4:*p=(char)n;memd+=1;dicc[ndicc-1].mem+=0x100000;break;
 	}
 }
 
@@ -692,18 +798,22 @@ void compilaADDR(int n)
 {
 if (modo>1) { 
 //	if ((dicc[n].mem&0x80000000)==0) // code
-		datanro(dicc[n].mem&0xfffff);
+	datanro(dicc[n].mem&0xfffff);
 //	else							// data
 //		datanro((int32_t)&memdata[dicc[n].mem&0xfffff]);	
 	return; 
 	}
-codetok(((dicc[n].mem&0xfffff)<<8)+iADR);  //1 code 2 data***
+codetok(((dicc[n].mem&0xfffff)<<8)+iADR+((dicc[n].mem>>31)&1));
 }
 
 // Compile literal
 void compilaLIT(int32_t n) {
 if (modo>1) { datanro(n);return; }
-codetok((n<<8)|iLIT1); 
+if (base==10) {	base=iLITd;
+} else if (base==16) { base=iLITh;
+} else if (base==2) { base=iLITb;
+} else if (base==32) { 	base=iLITb; }
+codetok((n<<8)|base); 
 //int32_t v=n;
 //if ((token<<8>>8)==n) return;
 //token=n>>;
@@ -720,6 +830,7 @@ if (n==iMUL) modo=3; // * reserva bytes
 
 // Start block code (
 void blockIn(void) {
+codetok(OPEB);
 pushA(memc);
 level++;
 }
@@ -742,9 +853,10 @@ void blockOut(void) {
 int from=popA();
 int dist=memc-from;
 if (solvejmp(from,memc)) { // salta
-	codetok((-(dist+1)<<8)+iJMPR); 	// jmpr
+	codetok((-(dist+1)<<8)+CLOB); 	// )
 } else { // patch if	
 	memcode[from-1]|=(dist<<8);		// full dir
+  codetok(CLOB);   // )
 	}
 level--;	
 lastblock=memc;
@@ -761,7 +873,7 @@ level++;
 void anonOut(void) {
 int from=popA();
 memcode[from]|=(memc<<8);  // patch jmp
-codetok((from+1)<<8|iLIT1);
+codetok((from+1)<<8|iLITd);
 level--;  
 }
 
@@ -770,6 +882,7 @@ void compilaCORE(int n) {
 if (modo>1) { dataMAC(n);return; }
 if (n==0) { 					// ;
 	if (level==0) modo=0; 
+	dicc[ndicc-1].mem|=(1+memc-(dicc[ndicc-1].mem&0xfffff)<<20); // length in tokens
 //	if ((memcode[memc-1]&0xff)==iCALL && lastblock!=memc) { // avoid jmp to block
 //		memcode[memc-1]=(memcode[memc-1]^iCALL)|iJMP; // call->jmp avoid ret
 //		return;
@@ -831,14 +944,11 @@ return 0;
 }
 
 void dump() {
-cprint("DUMP");ccr();
+cprint("code");ccr();
 for(int i=0;i<memc;i++) { cprint(hex(memcode[i]));cprint(" "); }
-ccr();
+cprint("data");ccr();
 for(int i=0;i<memd;i++) { cprint(hex(memdata[i]));cprint(" "); }
 ccr();
-}
-
-void dumpd() {
 cprint("DICC");ccr();	
 for(int i=0;i<ndicc;i++) {
 	cprint(code2word(dicc[i].name));
@@ -853,7 +963,7 @@ const char *prompt[]={">",":>","#>","#>","#>"};
 void cprompt() {
 ccr();cprint((char*)prompt[modo]);  
 cposinp=cpos;
-inputpad[0]=0;cmax=255;ccur=0;cfin=0;
+inputpad[0]=0;ccur=0;cfin=0;
 //cpos=cposinp;
 //cprint(inputpad);
 //cprint(" ");
