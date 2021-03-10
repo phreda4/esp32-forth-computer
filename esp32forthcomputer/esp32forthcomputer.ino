@@ -92,12 +92,7 @@ for(int i=SCREEN_W;i>0;i--) { *p++=cattrib; }
 
 void catxy(byte x,byte y) { if (x<SCREEN_W&&y<SCREEN_H) { cpos=&screen[x+y*40]; } }
 void cemit(int c) { *cpos++=cattrib|c;if (cpos>=&screen[SCREEN_SIZE]) { cscroll();cpos-=40; } }
-
-void cprint(char *s) {
-byte c;
-while ((c=*s++)!=0) { *cpos++=cattrib|c;if (cpos>=&screen[SCREEN_SIZE]) { cscroll();cpos-=40; } }
-}
-
+void cprint(char *s) { int c;while ((c=(int)*s++)!=0) { cemit(c); } } 
 void ccr() {
 cpos=&screen[((((cpos-screen))/SCREEN_W)+1)*SCREEN_W];
 if (cpos>=&screen[SCREEN_SIZE]) { cscroll();cpos-=SCREEN_W; }
@@ -133,17 +128,31 @@ if (v<0) { *p=0x2d; } else { p++; }
 return p;
 }
 
+char *fix(int v) {
+char *p;
+int va=abs(v);
+p=dec((((va&0xffff)*10000)>>16)+10000);
+*p--=0x2e;va>>=16; // .
+do { *p--=(va%10)+0x30;va/=10; } while (va!=0);
+if (v<0) { *p=0x2d; } else { p++; }
+return p;
+}
+
 //------------------- PAD
 char inputpad[256];
 uint32_t *cposinp;
 uint32_t cmax,ccur,cfin;
 
-void cprompt() {
-ccr();cprint(" >");  
-cposinp=cpos;
-inputpad[0]=0;
-cmax=255;ccur=0;cfin=0;
-}
+int level;
+int modo;
+int cntstacka;
+int stacka[8];
+int lastblock;
+
+inline void iniA(void) { cntstacka=0; }
+inline void pushA(int n) { stacka[cntstacka++]=n; }
+inline int popA(void) { return stacka[--cntstacka]; }
+
 
 void modover(int c) {
   inputpad[ccur++]=(byte)c;
@@ -160,7 +169,7 @@ void kbac() {
   memmove(&inputpad[ccur-1],&inputpad[ccur],cfin-ccur+1);  
   ccur--;cfin--;
 }
-void kdel() { ccur++;kbac();  }  
+void kdel() { if (ccur<cfin) { ccur++;kbac(); } }  
 void khome() { ccur=0; }  
 void kend() { ccur=cfin; }  
 void klef() { if (ccur>0) { ccur--; } }  
@@ -169,42 +178,47 @@ void krig() { if (ccur<cfin) { ccur++; } }
 byte kmode=0;
 bool down;
 
-void cpad() {
-cpos=cposinp;
-cprint(inputpad);cprint(" ");
-cpos=cposinp+ccur;
-ccursorb=*cpos;*(cpos)|=0x800000; // blink in cursor
-
+int getkey() {
 auto keyboard = PS2Controller.keyboard();
-if (keyboard->virtualKeyAvailable()) {
-  
-  auto vk = keyboard->getNextVirtualKey(&down);
-  int c = keyboard->virtualKeyToASCII(vk);
-  if (down) {
-    *cpos=ccursorb;// remove cursor
-    if (c>=32) { 
-      if (kmode==0) { modoins(c); } else { modover(c); }
-  } else {
-      if (vk==fabgl::VK_INSERT) { kmode^=1; }            
-      if (vk==fabgl::VK_BACKSPACE) { kbac(); }  
-      if (vk==fabgl::VK_DELETE) { kdel(); }  
-      if (vk==fabgl::VK_HOME) { khome(); }  
-      if (vk==fabgl::VK_END) { kend(); }  
-      if (vk==fabgl::VK_LEFT) { klef(); }  
-      if (vk==fabgl::VK_RIGHT) { krig(); }  
+//if (!keyboard.virtualKeyAvailable()) { return 0; }
+auto vk = keyboard->getNextVirtualKey(&down);
+if (vk==fabgl::VK_NONE) return 0;
+return (vk<<8)|keyboard->virtualKeyToASCII(vk);
+}
 
-      if (vk==fabgl::VK_RETURN) { interpreter(); }  
+void cpad() {
+auto keyboard = PS2Controller.keyboard();
+VirtualKey vk = keyboard->getNextVirtualKey(&down);
+if (vk==fabgl::VK_NONE) return;
+int c=keyboard->virtualKeyToASCII(vk);
+if (down) {
+  *cpos=ccursorb;// remove cursor
+  if (c>31&&c<127) { 
+    if (kmode==0) { modoins(c); } else { modover(c); }
+  } else {
+    if (vk==fabgl::VK_INSERT) { kmode^=1; }            
+    if (vk==fabgl::VK_BACKSPACE) { kbac(); }  
+    if (vk==fabgl::VK_DELETE) { kdel(); }  
+    if (vk==fabgl::VK_HOME) { khome(); }  
+    if (vk==fabgl::VK_END) { kend(); }  
+    if (vk==fabgl::VK_LEFT) { klef(); }  
+    if (vk==fabgl::VK_RIGHT) { krig(); }  
+
+    if (vk==fabgl::VK_RETURN) { interpreter(); }  
       
 //  if (vk==fabgl::VK_TAB) { kbac(); }            
 //  if (vk==fabgl::VK_UP) { kbac(); }  
 //  if (vk==fabgl::VK_DOWN) { kbac(); }  
 //  if (vk==fabgl::VK_PAGEUP) { kbac(); }  
 //  if (vk==fabgl::VK_PAGEDOWN) { kbac(); }  
-    }
-  }
- }  
+		}
+	cpos=cposinp;
+	cprint(inputpad);cprint(" ");
+	cpos=cposinp+ccur;
+	while (cpos+1>=&screen[SCREEN_SIZE]) { cpos-=40;cposinp-=40; }	// scroll??
+	ccursorb=*cpos;*(cpos)|=0x800000; // blink in cursor
+	}
 }
-
 
 //------------------- INTERPRETER
 
@@ -222,12 +236,14 @@ const char *wcoredicc[]={
 "<<",">>",">>>","/MOD","* /","*>>","<</",
 "MOVE","MOVE>","FILL","CMOVE","CMOVE>","CFILL",
 
-"WORDS",
+"WORDS",".S",
+"INK","PAPER","CLS","ATXY","EMIT","PRINT","CR",
 ""
 };
 
+#define INTERNALWORDS 9
 enum {
-iLIT1,iLIT2,iLITs,iCOM,iJMPR,iJMP,iCALL,iADR,iVAR, // no 
+iLIT1,iLIT2,iLITs,iCOM,iJMPR,iJMP,iCALL,iVAR,iADR, // internal
  
 iEND,OPEB,CLOB,OPEA,CLOA,iEX,ZIF,UIF,PIF,NIF,
 IFL,IFG,IFE,IFGE,IFLE,IFNE,IFAND,IFNAND,IFBT,
@@ -241,8 +257,10 @@ iAND,iOR,iXOR,iADD,iSUB,iMUL,iDIV,iMOD,
 iSHL,iSAR,iSHR,iDMOD,iMULDIV,iMULSH,iSHDIV,
 iMOV,iMOVA,iFILL,iCMOV,iCMOVA,iCFILL,
 
-iWORDS,
-iiii
+iWORDS,iSTACK,
+iINK,iPAPER,iCLS,iATXY,iEMIT,iPRINT,iCR,
+
+iiii, // last real
 };
 
 #define STACKSIZE 512
@@ -287,15 +305,7 @@ while (vname!=0) {
   wname[i]=bit6char((int)vname);
   i--;vname>>=6;
   }
-return (char*)wname;
-}
-
-void printstack() {
-for (int32_t *i=stack+1;i<=ANOS;i++) { cemit(32);cprint(dec(*i)); }
-if (stack<=ANOS) { cemit(32);cprint(dec(ATOS)); }
-} 
-
-void printwords() {
+return (char*)&wname[i+1];
 }
 
 void r3init() {
@@ -310,45 +320,46 @@ ANOS=&stack[-1];
 
 void runr3(int32_t boot) {
 stack[STACKSIZE-1]=0;  
-int32_t TOS=ATOS;
-int32_t *NOS=ANOS;
-int32_t *RTOS=&stack[STACKSIZE-1];
-int32_t REGA=0;
-int32_t REGB=0;
-int32_t op=0;
-int32_t ip=boot;
+register int32_t TOS=ATOS;
+register int32_t *NOS=ANOS;
+register int32_t *RTOS=&stack[STACKSIZE-1];
+register int32_t REGA=0;
+register int32_t REGB=0;
+register int32_t op=0;
+register int32_t ip=boot;
 
 next:
   op=memcode[ip++]; //  printcode(op);
   switch(op&0x7f){
-    case iLIT1:NOS++;*NOS=TOS;TOS=op>>7;goto next;
+    case iLIT1:NOS++;*NOS=TOS;TOS=op>>8;goto next;
     case iLIT2:NOS++;*NOS=TOS;TOS=op&0xffffff80;goto next;
-    case iLITs:NOS++;*NOS=TOS;TOS=op>>7;goto next;
+    case iLITs:NOS++;*NOS=TOS;TOS=op>>8;goto next;
     case iCOM:goto next;
-    case iJMPR:ip+=op>>7;goto next;
-    case iJMP:ip=op>>7;goto next;
-    case iCALL:RTOS--;*RTOS=ip;ip=op>>7;goto next;
-    case iADR:NOS++;*NOS=TOS;TOS=op>>7;goto next;
-    case iVAR:NOS++;*NOS=TOS;TOS=memdata[op>>7];goto next;
+    case iJMPR:ip+=op>>8;goto next;
+    case iJMP:ip=op>>8;goto next;
+    case iCALL:RTOS--;*RTOS=ip;ip=op>>8;goto next;
+    case iVAR:NOS++;*NOS=TOS;TOS=memdata[op>>8];goto next;
+    case iADR:NOS++;*NOS=TOS;TOS=op>>8;goto next;
+	
     case iEND:ip=*RTOS;RTOS++;if (ip==0) { ATOS=TOS;ANOS=NOS;return; } goto next;  
     case OPEB:goto next;
-    case CLOB:ip+=op>>7;goto next;
-    case OPEA:ip+=op>>7;goto next;
-    case CLOA:NOS++;*NOS=TOS;TOS=op>>7;goto next;
+    case CLOB:ip+=op>>8;goto next;
+    case OPEA:ip+=op>>8;goto next;
+    case CLOA:NOS++;*NOS=TOS;TOS=op>>8;goto next;
     case iEX:RTOS--;*RTOS=ip;ip=TOS;TOS=*NOS;NOS--;goto next;  
-    case ZIF:if (TOS!=0) {ip+=op>>7;} goto next;
-    case UIF:if (TOS==0) {ip+=op>>7;} goto next;
-    case PIF:if (TOS<0) {ip+=op>>7;} goto next;
-    case NIF:if (TOS>=0) {ip+=op>>7;} goto next;
-	case IFL:if (TOS<=*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;goto next;//IFL
-	case IFG:if (TOS>=*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;goto next;//IFG
-	case IFE:if (TOS!=*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;goto next;//IFN	
-	case IFGE:if (TOS>*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;goto next;//IFGE
-	case IFLE:if (TOS<*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;goto next;//IFLE
-	case IFNE:if (TOS==*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;goto next;//IFNO
-	case IFAND:if (!(TOS&*NOS)) {ip+=(op>>7);} TOS=*NOS;NOS--;goto next;//IFNA
-	case IFNAND:if (TOS&*NOS) {ip+=(op>>7);} TOS=*NOS;NOS--;goto next;//IFAN
-	case IFBT:if (*(NOS-1)>TOS||*(NOS-1)<*NOS) {ip+=(op>>7);} TOS=*(NOS-1);NOS-=2;goto next;//BTW 
+	case ZIF:if (TOS!=0) {ip+=op>>8;} goto next;
+	case UIF:if (TOS==0) {ip+=op>>8;} goto next;
+	case PIF:if (TOS<0) {ip+=op>>8;} goto next;
+	case NIF:if (TOS>=0) {ip+=op>>8;} goto next;
+	case IFL:if (TOS<=*NOS) {ip+=(op>>8);} TOS=*NOS;NOS--;goto next;//IFL
+	case IFG:if (TOS>=*NOS) {ip+=(op>>8);} TOS=*NOS;NOS--;goto next;//IFG
+	case IFE:if (TOS!=*NOS) {ip+=(op>>8);} TOS=*NOS;NOS--;goto next;//IFN	
+	case IFGE:if (TOS>*NOS) {ip+=(op>>8);} TOS=*NOS;NOS--;goto next;//IFGE
+	case IFLE:if (TOS<*NOS) {ip+=(op>>8);} TOS=*NOS;NOS--;goto next;//IFLE
+	case IFNE:if (TOS==*NOS) {ip+=(op>>8);} TOS=*NOS;NOS--;goto next;//IFNO
+	case IFAND:if (!(TOS&*NOS)) {ip+=(op>>8);} TOS=*NOS;NOS--;goto next;//IFNA
+	case IFNAND:if (TOS&*NOS) {ip+=(op>>8);} TOS=*NOS;NOS--;goto next;//IFAN
+	case IFBT:if (*(NOS-1)>TOS||*(NOS-1)<*NOS) {ip+=(op>>8);} TOS=*(NOS-1);NOS-=2;goto next;//BTW 
     case iDUP:NOS++;*NOS=TOS;goto next;
     case iDROP:TOS=*NOS;NOS--;goto next;
     case iOVER:NOS++;*NOS=TOS;TOS=*(NOS-1);goto next;
@@ -416,26 +427,30 @@ next:
     case iCFILL:goto next;
 	
 	case iWORDS:xwords();goto next;
-	// case LIST
-	// case EDIT
-	// case FORGET
-	// case CSAVE
-	// case CLOAD
-	// case CNEW
-	// case MEM
-	// case MEMFONT
-	// case MEMCONS
+  case iSTACK:xstack();goto next;
+	// case iLIST
+	// case iEDIT
+	// case iFORGET
+	// case iCSAVE
+	// case iCLOAD
+	// case iCNEW
+	// case iMEM
+	// case iMEMFONT
+	// case iMEMCONS
 	
-	// case SLEEP
-	// case MSEC
-	// case TIME
-	// case DATE
-	// case INK
-	// case PAPER
-	// case CLS
-	// case ATXY
-	// case EMIT
-	
+	// case iSLEEP
+	// case iMSEC
+	// case iTIME
+	// case iDATE
+ 
+	case iINK:cink(TOS);TOS=*NOS;NOS--;goto next;
+	case iPAPER:cpaper(TOS);TOS=*NOS;NOS--;goto next;
+	case iCLS:ccls();goto next;
+	case iATXY:catxy(TOS,*NOS);NOS--;TOS=*NOS;NOS--;goto next;
+	case iEMIT:cemit(TOS);TOS=*NOS;NOS--;goto next;
+	case iPRINT:cprint((char*)&memdata[TOS]);TOS=*NOS;NOS--;goto next;
+	case iCR:ccr();goto next;
+  
 	// case KEY
 	// case CHAR
 	// case XYPEN
@@ -448,11 +463,12 @@ next:
   entry.size()
   entry.isDirectory()
   entry.close()
+  
   file = SPIFFS.open("/test.txt", "w");
     file.println("Hello From ESP32 :-)");
   file.close();
+  
   SPIFFS.remove(path)
-  SPIFFS.end()//*** NO
   
    while(file.available()){
     Serial.write(file.read());
@@ -477,33 +493,34 @@ gettimeofday(&tv_now, NULL);
 int64_t time_us = (int64_t)tv_now.tv_sec * 1000000L + (int64_t)tv_now.tv_usec;
 
 */	
-	
     }
-
 }
 
 void xwords() {
 int i=0;
+cpaper(0);
+cink(7);
 while (wcoredicc[i][0]!=0) {
   cprint((char*)wcoredicc[i]);cemit(32);
   i++;}
 for (i=0;i<ndicc;i++) {
+  if (dicc[i].mem&0x80000000) cink(51); else cink(3);  
   cprint(code2word(dicc[i].name));cemit(32);    
   }
+ccr();
 }
+
+void xstack() {
+cink(63);
+for (int32_t *i=stack+1;i<=ANOS;i++) { cpaper(0);cemit(32);cpaper(52);cprint(dec(*i)); }
+if (stack<=ANOS) { cpaper(0);cemit(32);cpaper(52);cprint(dec(ATOS)); }
+cpaper(0);ccr();
+} 
+
+
 //------------------ TOKENIZER
 
 int32_t nro; // for parse
-int level;
-int modo;
-int cntstacka;
-int stacka[8];
-int lastblock;
-
-inline void iniA(void) { cntstacka=0; }
-inline void pushA(int n) { stacka[cntstacka++]=n; }
-inline int popA(void) { return stacka[--cntstacka]; }
-
 
 // scan for a valid number begin in *p char
 // return number in global var "nro"
@@ -614,23 +631,21 @@ memdata[memd]=0;memd+=4;
 }
 
 void compilaCODE(char *str) {
-	cprint("CODE ");ccr();
 int ex=0;
 closevar();
 if (*(str+1)==':') { ex=1;str++; } // exported
 //if (*(str+1)<33) { boot=memc; }
-dicc[ndicc].name=word2code(str);
+dicc[ndicc].name=word2code(str+1);
 dicc[ndicc].mem=(ex<<31)|memc;
 ndicc++;
 modo=1;
 }
 
 void compilaDATA(char *str) {
-	cprint("DATA ");ccr();
 int ex=0;
 closevar();
 if (*(str+1)=='#') { ex=1;str++; } // exported
-dicc[ndicc].name=word2code(str);
+dicc[ndicc].name=word2code(str+1);
 dicc[ndicc].mem=0x80000000|(ex<<31)|memd;
 ndicc++;
 modo=2;
@@ -640,14 +655,28 @@ modo=2;
 void codetok(int32_t nro) { memcode[memc++]=nro; }
 
 char *nextcom(char *) { }
-void compilaSTR(char*) {
-	cprint("STR ");
+
+// store in datamemory a string
+int datasave(char *str) 
+{
+int r=memd;
+for(;*str!=0;str++) { 
+	if (*str==34) { str++;if (*str!=34) break; }
+	memdata[memd++]=*str;
+	}
+memdata[memd++]=0;	
+return r;
 }
 
-void compilaADDR(int) {
-	cprint("ADR ");
+// compile a string, in code save the token to retrieve too.
+void compilaSTR(char *str) 
+{
+str++;
+int ini=datasave(str);	
+if (modo<2) codetok((ini<<8)+iLITs); // lit data
 }
 
+// Store in datamemory a number or reserve mem
 void datanro(int32_t n) { 
 int8_t *p=&memdata[memd];	
 switch(modo){
@@ -657,12 +686,26 @@ switch(modo){
 	}
 }
 
+
+// Compile adress of var
+void compilaADDR(int n) 
+{
+if (modo>1) { 
+//	if ((dicc[n].mem&0x80000000)==0) // code
+		datanro(dicc[n].mem&0xfffff);
+//	else							// data
+//		datanro((int32_t)&memdata[dicc[n].mem&0xfffff]);	
+	return; 
+	}
+codetok(((dicc[n].mem&0xfffff)<<8)+iADR);  //1 code 2 data***
+}
+
+// Compile literal
 void compilaLIT(int32_t n) {
-	//cprint("LIT ");cprint(dec(n));
 if (modo>1) { datanro(n);return; }
-codetok((n<<7)|iLIT1); 
+codetok((n<<8)|iLIT1); 
 //int32_t v=n;
-//if ((token<<7>>7)==n) return;
+//if ((token<<8>>8)==n) return;
 //token=n>>;
 //codetok((token<<8)+LIT2); 
 }
@@ -686,8 +729,8 @@ int solvejmp(int from,int to) {
 int whi=false;
 for (int i=from;i<to;i++) {
 	int op=memcode[i]&0x7f;
-	if (op>=ZIF && op<=IFBT && (memcode[i]>>7)==0) { // patch while 
-		memcode[i]|=(memc-i)<<7;	// full dir
+	if (op>=ZIF && op<=IFBT && (memcode[i]>>8)==0) { // patch while 
+		memcode[i]|=(memc-i)<<8;	// full dir
 		whi=true;
 		}
 	}
@@ -699,9 +742,9 @@ void blockOut(void) {
 int from=popA();
 int dist=memc-from;
 if (solvejmp(from,memc)) { // salta
-	codetok((-(dist+1)<<7)+iJMPR); 	// jmpr
+	codetok((-(dist+1)<<8)+iJMPR); 	// jmpr
 } else { // patch if	
-	memcode[from-1]|=(dist<<7);		// full dir
+	memcode[from-1]|=(dist<<8);		// full dir
 	}
 level--;	
 lastblock=memc;
@@ -717,14 +760,13 @@ level++;
 // end anonymous definition, save adress in stack
 void anonOut(void) {
 int from=popA();
-memcode[from]|=(memc<<7);  // patch jmp
-codetok((from+1)<<7|iLIT1);
+memcode[from]|=(memc<<8);  // patch jmp
+codetok((from+1)<<8|iLIT1);
 level--;  
 }
 
 // compile word from core diccionary
 void compilaCORE(int n) {
-	//cprint("CORE ");
 if (modo>1) { dataMAC(n);return; }
 if (n==0) { 					// ;
 	if (level==0) modo=0; 
@@ -739,20 +781,24 @@ if (n==3) { anonIn();return; }		//[	salto:etiqueta
 if (n==4) { anonOut();return; }		//]	etiqueta;push
 //int token=memcode[memc-1];
 
-codetok(n+9);		
+codetok(n+INTERNALWORDS);		
 }
 
-void compilaWORD(int) {
-	cprint("WORDS ");
+// compile WORD,or VAR
+void compilaWORD(int n) {
+if (modo>1) { datanro(n);return; }
+codetok(((dicc[n].mem&0xfffff)<<8)+iCALL+((dicc[n].mem>>31)&1));
 }
 
-void seterror(char *,char *) {}
+int cerror;
 
 // tokeniza string
 int r3token(char *str) {
-level=0;
+char *istr=str;
+level=0; //
+
 while(*str!=0) {
-	str=trim(str);if (*str==0) return -1;
+	str=trim(str);if (*str==0) return 0;
 	switch (*str) {
 		case '^':str=nextcr(str);break;		// include
 		case '|':str=nextcom(str);break;	// comments	
@@ -764,7 +810,7 @@ while(*str!=0) {
 			if (nro<0) { 
 				if (isCore(str)) // 'ink allow compile replace
 					{ compilaCORE(nro);str=nextw(str);break; }
-				seterror(str,"adr not found");return 0; 
+				cerror=str-istr;return 2; 
 				}
 			compilaADDR(nro);str=nextw(str);break;		
 		default:
@@ -773,57 +819,108 @@ while(*str!=0) {
 			if (isCore(str)) 
 				{ compilaCORE(nro);str=nextw(str);break; }
 			nro=isWord(str);
-			//if (nro<0) { seterror(str,"word not found");return 0; }
-			if (modo==1) 
+			if (nro<0) { cerror=str-istr;return 1; }
+			if (modo<2) 
 				compilaWORD(nro); 
 			else 
 				compilaADDR(nro);
 			str=nextw(str);break;
 		}
 	}
-return -1;
+return 0;
 }
-
 
 void dump() {
 cprint("DUMP");ccr();
-for(int i=0;i<memc;i++) {
-	cprint(hex(memcode[i]));cprint(" ");
-	}
+for(int i=0;i<memc;i++) { cprint(hex(memcode[i]));cprint(" "); }
 ccr();
-for(int i=0;i<memd;i++) {
-	cprint(hex(memdata[i]));cprint(" ");
-	}
+for(int i=0;i<memd;i++) { cprint(hex(memdata[i]));cprint(" "); }
 ccr();
 }
 
+void dumpd() {
+cprint("DICC");ccr();	
+for(int i=0;i<ndicc;i++) {
+	cprint(code2word(dicc[i].name));
+	cprint(" ");
+	cprint(hex(dicc[i].mem));
+	ccr();
+	}
+}
+
+const char *prompt[]={">",":>","#>","#>","#>"};
+
+void cprompt() {
+ccr();cprint((char*)prompt[modo]);  
+cposinp=cpos;
+inputpad[0]=0;cmax=255;ccur=0;cfin=0;
+//cpos=cposinp;
+//cprint(inputpad);
+//cprint(" ");
+cpos=cposinp+ccur;
+ccursorb=*cpos;*(cpos)|=0x800000; // blink in cursor
+}
+
+void cedit() {
+ccur=cerror;
+ccr();cprint((char*)prompt[modo]);  
+cposinp=cpos;
+cprint(inputpad);
+cpos=cposinp+ccur;
+while (cpos+1>=&screen[SCREEN_SIZE]) { cpos-=40;cposinp-=40; }	// scroll??
+ccursorb=*cpos;*(cpos)|=0x800000; // blink in cursor
+}
+
+const char *msg[]={
+  "Ok.",
+  "Word not found",
+  "Addr not found",
+};
+
 void interpreter() {
+int32_t andicc=ndicc,amemd=memd,amemc=memc;
+
 ccr();
-//cprint("Parsing...");ccr();
+if (inputpad[0]==0) { modo=0;cprompt();return; }
+
 int error=r3token(inputpad);
-codetok(iEND);
-runr3(0);
-memc=0;
-ccr();printstack();ccr();
+
+if (modo==0&&andicc==ndicc&&error==0) { // only imm, not new definitions 
+  codetok(iEND);
+  runr3(amemc);
+  memd=amemd;memc=amemc; 
+  }
+
+//printstack();ccr();
 //dump();ccr();
-cprint("ok");
-cprompt();
+//dumpd();ccr();
+if (error==0) { cink(12);cpaper(0); } else { cink(63);cpaper(3); }
+cprint((char*)msg[error]);
+cink(63);cpaper(0);
+if (error==0) { cprompt(); } else { cedit(); }
 }
 
 //------------------- MAIN
 void setup()
 {
-//  Serial.begin(115200); delay(500); Serial.write("ESP32 Forth Computer\n"); // DEBUG ONLY
+//Serial.begin(115200);Serial.write("ESP32 Forth Computer\n");
+
+if (!SPIFFS.begin()){ 
+//	Serial.write("SPIFFS error!\n");
+	return; }
 
 mainTaskHandle = xTaskGetCurrentTaskHandle();
 PS2Controller.begin(PS2Preset::KeyboardPort0); //PS2Preset::KeyboardPort0_MousePort1);
-//keyboard->suspendVirtualKeyGeneration(false);
+
 auto keyboard = PS2Controller.keyboard();
+//keyboard->suspendVirtualKeyGeneration(false);
+
 //        keyboard->setLayout(&fabgl::USLayout);
 //        keyboard->setLayout(&fabgl::UKLayout);
 //        keyboard->setLayout(&fabgl::GermanLayout);
 //        keyboard->setLayout(&fabgl::ItalianLayout);
-        keyboard->setLayout(&fabgl::SpanishLayout);
+
+  keyboard->setLayout(&fabgl::SpanishLayout);
         
 DisplayController.begin();
 DisplayController.setDrawScanlineCallback(drawScanline);
@@ -845,22 +942,17 @@ r3init();
 ccls(); 
 cink(60);cprint("ESP32 ");
 cink(3);cprint("Forth ");
-cink(12);cprint("Computer ");
-cink(32);ccr();
-cprint("PHREDA - Mem:");
+cink(12);cprint("Computer ");ccr();
+cink(52);cprint("PHREDA 2021");ccr();
+cink(12);
+cprint("Mem:");
 //cprint(dec(heap_caps_get_free_size(MALLOC_CAP_DMA)>>10));
 cprint(dec(heap_caps_get_free_size(MALLOC_CAP_32BIT)>>10));
-cprint("Kb");
+cprint("Kb - ");
+cprint(" FS:");
+cprint(dec(SPIFFS.usedBytes()>>10));cprint("/");
+cprint(dec(SPIFFS.totalBytes()>>10));cprint("Kb used");   
 ccr();
-/*
-if (SPIFFS.begin()){
-	cprint("SPIFFS mounted ");
-	cprint(dec(SPIFFS.usedBytes()));
-	cprint("/");
-	cprint(dec(SPIFFS.totalBytes()));
-	cprint(" bytes");		
-}else{ cprint("SPIFFS error!"); }
-*/
 
 cink(63);
 cprompt();
