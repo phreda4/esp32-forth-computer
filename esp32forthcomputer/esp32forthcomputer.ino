@@ -238,11 +238,11 @@ const char *wcoredicc[]={
 "<<",">>",">>>","/MOD","* /","*>>","<</",
 "MOVE","MOVE>","FILL","CMOVE","CMOVE>","CFILL",
 
-"WORDS",".S","LIST","EDIT","DUMP",
+"REDRAW","INK","PAPER","CLS","ATXY","EMIT","PRINT","CR",
 "MEM",
 "MSEC","TIME","DATE",
 
-"INK","PAPER","CLS","ATXY","EMIT","PRINT","CR",
+"WORDS",".S","LIST","EDIT","DUMP","DIR",
 ""
 };
 
@@ -262,7 +262,7 @@ iAND,iOR,iXOR,iADD,iSUB,iMUL,iDIV,iMOD,
 iSHL,iSAR,iSHR,iDMOD,iMULDIV,iMULSH,iSHDIV,
 iMOV,iMOVA,iFILL,iCMOV,iCMOVA,iCFILL,
 
-iWORDS,iSTACK,iLIST,iEDIT,iDUMP,
+iREDRAW,iINK,iPAPER,iCLS,iATXY,iEMIT,iPRINT,iCR,
 iMEM,
 	// iMEMFONT
 	// iMEMCONS
@@ -270,7 +270,7 @@ iMEM,
 	// iSLEEP
 iMSEC,iTIME,iIDATE,
 
-iINK,iPAPER,iCLS,iATXY,iEMIT,iPRINT,iCR,
+iWORDS,iSTACK,iLIST,iEDIT,iDUMP,iDIR,
 
 iiii, // last real
 };
@@ -335,6 +335,8 @@ ANOS=&stack[-1];
 time_t now;
 struct tm timeinfo;
 struct timeval tv_now;
+File dir;
+File entry;
 
 void runr3(int32_t boot) {
 stack[STACKSIZE-1]=0;  
@@ -447,21 +449,21 @@ next:
     case iCMOV:goto next;
     case iCMOVA:goto next;
     case iCFILL:goto next;
-	
-	case iWORDS:xwords();goto next;
-	case iSTACK:xstack();goto next;
-	case iLIST:xlist(memcode[ip-2]);goto next;
-	case iEDIT:xedit(memcode[ip-2]);goto next;	
-  case iDUMP:dump();goto next;
-	// case iFORGET
-	// case iCSAVE
-	// case iCLOAD
-	// case iCNEW
-	
+
+    case iREDRAW:redraw();goto next;
+	case iINK:cink(TOS);TOS=*NOS;NOS--;goto next;
+	case iPAPER:cpaper(TOS);TOS=*NOS;NOS--;goto next;
+	case iCLS:ccls();goto next;
+	case iATXY:catxy(*NOS,TOS);NOS--;TOS=*NOS;NOS--;goto next;
+	case iEMIT:cemit(TOS);TOS=*NOS;NOS--;goto next;
+	case iPRINT:cprint((char*)&memdata[TOS]);TOS=*NOS;NOS--;goto next;
+	case iCR:ccr();goto next;
+
 	case iMEM:NOS++;*NOS=TOS;TOS=memd;goto next;
 	// case iMEMFONT
 	// case iMEMCONS
 	
+	// iSLEEP
 	// case iSLEEP
 	case iMSEC://"MSEC"
 		NOS++;*NOS=TOS;TOS=millis();goto next;
@@ -471,21 +473,48 @@ next:
 	case iIDATE://"DATE"
 		time(&now);localtime_r(&now, &timeinfo);
 		NOS++;*NOS=TOS;TOS=(timeinfo.tm_year+1900)<<16|(timeinfo.tm_mon+1)<<8|timeinfo.tm_mday;goto next;
+
 	
+	case iWORDS:xwords();goto next;
+	case iSTACK:xstack();goto next;
+	case iLIST:xlist(memcode[ip-2]);goto next;
+	case iEDIT:xedit(memcode[ip-2]);goto next;	
+	case iDUMP:dump();goto next;
+	// case iFORGET
+	// case iCSAVE
+	// case iCLOAD
+	// case iCNEW
+  case iDIR:
+    cink(63);cpaper(0);
+    entry = SPIFFS.open("/help.txt");
  
-	case iINK:cink(TOS);TOS=*NOS;NOS--;goto next;
-	case iPAPER:cpaper(TOS);TOS=*NOS;NOS--;goto next;
-	case iCLS:ccls();goto next;
-	case iATXY:catxy(TOS,*NOS);NOS--;TOS=*NOS;NOS--;goto next;
-	case iEMIT:cemit(TOS);TOS=*NOS;NOS--;goto next;
-	case iPRINT:cprint((char*)&memdata[TOS]);TOS=*NOS;NOS--;goto next;
-	case iCR:ccr();goto next;
+  cprint("File Content:");ccr();
+//  while(entry.available()){
+//    cprint((char*)entry.read());
+//  }
+//  entry.close();
+  /*
+    dir = SPIFFS.open("/");
+    entry = dir.openNextFile();
+    while (entry) {
+        cprint((char*)entry.name());
+        if (entry.isDirectory()) { cprint("/"); }
+        cemit(32);cprint(dec(entry.size()));
+        ccr();
+        entry.close();
+        entry = dir.openNextFile();
+        }
+    
+    dir.close();
+    */
+    goto next;
+ 
   
 	// case KEY
 	// case CHAR
 	// case XYPEN
 	// case BPEN
-	
+
 	
 /*	
 	case iLOAD:
@@ -506,14 +535,6 @@ next:
 		file.close();
 		goto next;
 
-	case iDIR:
-		File dir = SPIFFS.open("/");
-		File entry =  dir.openNextFile();
-		entry.name()
-		entry.size()
-		entry.isDirectory()
-		entry.close()
-		goto next;
 	case iDNAME
 	case iDSIZE
 
@@ -730,8 +751,9 @@ return -1;
 
 void closevar() {
 if (ndicc==0) return;
-if (!dicc[ndicc-1].mem&0x80000000) return; // prev is var
+if (!(dicc[ndicc-1].mem&0x80000000)) return; // prev is var
 if ((dicc[ndicc-1].mem&0xfffff)<memd) return;  		// have val
+if (((dicc[ndicc-1].mem>>20)&0x3f)>0) return;
 memdata[memd]=0;memd+=4;	
 dicc[ndicc-1].mem+=0x400000;
 }
@@ -839,7 +861,7 @@ level++;
 int solvejmp(int from,int to) {
 int whi=false;
 for (int i=from;i<to;i++) {
-	int op=memcode[i]&0x7f;
+	int op=memcode[i]&0xff;
 	if (op>=ZIF && op<=IFBT && (memcode[i]>>8)==0) { // patch while 
 		memcode[i]|=(memc-i)<<8;	// full dir
 		whi=true;
@@ -855,7 +877,7 @@ int dist=memc-from;
 if (solvejmp(from,memc)) { // salta
 	codetok((-(dist+1)<<8)+CLOB); 	// )
 } else { // patch if	
-	memcode[from-1]|=(dist<<8);		// full dir
+	memcode[from-2]|=(dist+2)<<8;		// full dir
   codetok(CLOB);   // )
 	}
 level--;	
@@ -882,7 +904,7 @@ void compilaCORE(int n) {
 if (modo>1) { dataMAC(n);return; }
 if (n==0) { 					// ;
 	if (level==0) modo=0; 
-	dicc[ndicc-1].mem|=(1+memc-(dicc[ndicc-1].mem&0xfffff)<<20); // length in tokens
+	dicc[ndicc-1].mem|=((memc-(dicc[ndicc-1].mem&0xfffff))+1)<<20; // length in tokens
 //	if ((memcode[memc-1]&0xff)==iCALL && lastblock!=memc) { // avoid jmp to block
 //		memcode[memc-1]=(memcode[memc-1]^iCALL)|iJMP; // call->jmp avoid ret
 //		return;
@@ -1011,6 +1033,10 @@ if (error==0) { cprompt(); } else { cedit(); }
 }
 
 //------------------- MAIN
+void redraw() {
+ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for vertical sync
+}
+
 void setup()
 {
 //Serial.begin(115200);Serial.write("ESP32 Forth Computer\n");
@@ -1071,6 +1097,6 @@ cprompt();
 void loop()
 {
 cpad();
-
-ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for vertical sync
+redraw();
+//ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for vertical sync
 }
