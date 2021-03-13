@@ -6,6 +6,10 @@ Computer made with ESP32 microcontroler
 * Inspired by JupiterAce computer
 * Inspired by ColorForth language
 
+## Development Videos
+
+https://www.youtube.com/channel/UCuhMgPZP7KoZFkoVAUyhw4A
+
 ## Modification of FabGl libary
 
 m_HVSync make public to calculate sync without make color (separate components)
