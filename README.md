@@ -13,14 +13,16 @@ https://www.youtube.com/channel/UCuhMgPZP7KoZFkoVAUyhw4A
 ## Modification of FabGl libary
 
 m_HVSync make public to calculate sync without make color (separate components)
+m_isr_handle for disable vga generation and use SPIFFS without errors
 
 in: src/dispdrivers/vgabasecontroller.h
 ```
   void setRawPixel(int x, int y, uint8_t rgb)    { VGA_PIXEL(x, y) = rgb; }
 
-  // contains H and V signals for visible line	//********
-  volatile uint8_t       m_HVSync;				//**** from above (protected)
-
+  // contains H and V signals for visible line
+  volatile uint8_t       m_HVSync;                // this two vars are move from above 
+  intr_handle_t          m_isr_handle;            // convert from protected to public for use
+  
 protected:
 ```
 
