@@ -3,7 +3,7 @@
 
 #pragma once
 
-static const byte romfont[256*8] = {
+byte romfont[256*8] = {
 0b00000000,
 0b00000000,
 0b00000000,

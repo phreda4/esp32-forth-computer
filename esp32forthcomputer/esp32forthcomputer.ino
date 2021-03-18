@@ -1,11 +1,19 @@
 // ESP32 forth computer
 // PHREDA 2021
-// * Use FabGL Library with 1 change (http://www.fabglib.org)W
+// * Use FabGL Library with 2 changes (http://www.fabglib.org)
 
-#include "SPIFFS.h" 
+//#include <WiFi.h>
+
+#include <SPIFFS.h>
 
 #include "fabgl.h"
 #include "fontjrom.h"
+
+// Replace with your network credentials
+//const char* ssid = "Adelaida";
+//const char* password = "33134253";
+// Set web server port number to 80
+//WiFiServer server(80);
 
 TaskHandle_t  mainTaskHandle;
 
@@ -182,10 +190,10 @@ bool down;
 
 int getkey() {
 auto keyboard = PS2Controller.keyboard();
-//if (!keyboard.virtualKeyAvailable()) { return 0; }
-auto vk = keyboard->getNextVirtualKey(&down);
+//if (!keyboard->virtualKeyAvailable()) { return 0; }
+auto vk=keyboard->getNextVirtualKey(&down,1);
 if (vk==fabgl::VK_NONE) return 0;
-return (vk<<8)|keyboard->virtualKeyToASCII(vk);
+return keyboard->virtualKeyToASCII(vk)|((down==false)?0x10000:0);
 }
 
 void cpad() {
@@ -239,10 +247,12 @@ const char *wcoredicc[]={
 "MOVE","MOVE>","FILL","CMOVE","CMOVE>","CFILL",
 
 "REDRAW","INK","PAPER","CLS","ATXY","EMIT","PRINT","CR",
-"MEM",
+"KEY","MEM","MEMSCR","MEMFNT",
+
 "MSEC","TIME","DATE",
 
-"WORDS",".S","LIST","EDIT","DUMP","DIR",
+"WORDS",".S","LIST","EDIT","DUMP",
+"DIR","CLOAD","CSAVE","CNEW","WIFI",
 ""
 };
 
@@ -263,22 +273,21 @@ iSHL,iSAR,iSHR,iDMOD,iMULDIV,iMULSH,iSHDIV,
 iMOV,iMOVA,iFILL,iCMOV,iCMOVA,iCFILL,
 
 iREDRAW,iINK,iPAPER,iCLS,iATXY,iEMIT,iPRINT,iCR,
-iMEM,
-	// iMEMFONT
-	// iMEMCONS
+iKEY,iMEM,iMEMSCR,iMEMFNT,
 	
 	// iSLEEP
 iMSEC,iTIME,iIDATE,
 
-iWORDS,iSTACK,iLIST,iEDIT,iDUMP,iDIR,
+iWORDS,iSTACK,iLIST,iEDIT,iDUMP,
+iDIR,iCLOAD,iCSAVE,iCNEW,iWIFI,
 
 iiii, // last real
 };
 
-#define STACKSIZE 512
-#define DICCMEM 0x3ff
-#define CODEMEM 0xfff
-#define DATAMEM 0xffff
+#define STACKSIZE 256
+#define DICCMEM 0x1ff
+#define CODEMEM 0x3ff
+#define DATAMEM 0x3fff
 
 int32_t stack[STACKSIZE];
 int32_t ATOS,*ANOS;
@@ -324,6 +333,7 @@ return (char*)&wname[i+1];
 void r3init() {
 ndicc=0;
 memc=memd=0;
+modo=0;
 resetr3();
 }
 
@@ -332,11 +342,9 @@ ATOS=0;
 ANOS=&stack[-1];
 }
 
+// DATE TIME
 time_t now;
 struct tm timeinfo;
-struct timeval tv_now;
-File dir;
-File entry;
 
 void runr3(int32_t boot) {
 stack[STACKSIZE-1]=0;  
@@ -354,16 +362,17 @@ next:
     case iLITd:NOS++;*NOS=TOS;TOS=op>>8;goto next;
     case iLITh:NOS++;*NOS=TOS;TOS=op>>8;goto next;
     case iLITb:NOS++;*NOS=TOS;TOS=op>>8;goto next;
-	case iLITf:NOS++;*NOS=TOS;TOS=op>>8;goto next;
+    case iLITf:NOS++;*NOS=TOS;TOS=op>>8;goto next;
     case iLIT2:TOS^=(op<<16)&0xff000000;goto next;
     case iLITs:NOS++;*NOS=TOS;TOS=op>>8;goto next;
     case iCOM:goto next;
     case iJMPR:ip+=op>>8;goto next;
     case iJMP:ip=op>>8;goto next;
     case iCALL:RTOS--;*RTOS=ip;ip=op>>8;goto next;
-    case iVAR:NOS++;*NOS=TOS;TOS=*(int32_t*)&memdata[op>>8];goto next;
-    case iADR:NOS++;*NOS=TOS;TOS=op>>8;goto next;
-    case iADRv:NOS++;*NOS=TOS;TOS=op>>8;goto next;	
+    
+    case iVAR:NOS++;*NOS=TOS;TOS=*(int*)&memdata[op>>8];goto next;
+    case iADR:NOS++;*NOS=TOS;TOS=(op>>8);goto next;
+    case iADRv:NOS++;*NOS=TOS;TOS=(op>>8);goto next;	
 	
     case iEND:ip=*RTOS;RTOS++;if (ip==0) { ATOS=TOS;ANOS=NOS;return; } goto next;  
     case OPEB:goto next;
@@ -459,13 +468,13 @@ next:
 	case iPRINT:cprint((char*)&memdata[TOS]);TOS=*NOS;NOS--;goto next;
 	case iCR:ccr();goto next;
 
+	case iKEY:NOS++;*NOS=TOS;TOS=getkey();goto next;
 	case iMEM:NOS++;*NOS=TOS;TOS=memd;goto next;
-	// case iMEMFONT
-	// case iMEMCONS
+	case iMEMSCR:NOS++;*NOS=TOS;TOS=(char*)screen-memdata;goto next; 
+	case iMEMFNT:NOS++;*NOS=TOS;TOS=(char*)romfont-memdata;goto next;
 	
-	// iSLEEP
 	// case iSLEEP
-	case iMSEC://"MSEC"
+	case iMSEC:
 		NOS++;*NOS=TOS;TOS=millis();goto next;
 	case iTIME://"TIME"
 		time(&now);localtime_r(&now, &timeinfo);
@@ -481,40 +490,15 @@ next:
 	case iEDIT:xedit(memcode[ip-2]);goto next;	
 	case iDUMP:dump();goto next;
 	// case iFORGET
-	// case iCSAVE
-	// case iCLOAD
-	// case iCNEW
-  case iDIR:
-    cink(63);cpaper(0);
-    entry = SPIFFS.open("/help.txt");
- 
-  cprint("File Content:");ccr();
-//  while(entry.available()){
-//    cprint((char*)entry.read());
-//  }
-//  entry.close();
-  /*
-    dir = SPIFFS.open("/");
-    entry = dir.openNextFile();
-    while (entry) {
-        cprint((char*)entry.name());
-        if (entry.isDirectory()) { cprint("/"); }
-        cemit(32);cprint(dec(entry.size()));
-        ccr();
-        entry.close();
-        entry = dir.openNextFile();
-        }
-    
-    dir.close();
-    */
-    goto next;
- 
+
+	case iDIR:xdir();goto next;
+	case iCLOAD:xcload((char*)TOS);return; // rewrite all codemem
+	case iCSAVE:xcsave((char*)TOS);TOS=*NOS;NOS--;goto next;
+	case iCNEW:xcnew();return; // rewrite all codemem
+	case iWIFI:xwifi();goto next;
   
-	// case KEY
-	// case CHAR
 	// case XYPEN
 	// case BPEN
-
 	
 /*	
 	case iLOAD:
@@ -534,9 +518,6 @@ next:
 		file.println("Hello From ESP32 :-)");
 		file.close();
 		goto next;
-
-	case iDNAME
-	case iDSIZE
 
 */	
     }
@@ -563,6 +544,133 @@ if (stack<=ANOS) { cpaper(0);cemit(32);cpaper(52);cprint(dec(ATOS)); }
 cpaper(0);ccr();
 } 
 
+void xcload(char *filename) {
+esp_intr_disable(DisplayController.m_isr_handle);  
+if (SPIFFS.exists(filename)) {
+  r3init();
+  File entry = SPIFFS.open(filename,"r");
+  while(entry.available()){
+	  int l = entry.readBytesUntil('\n',inputpad,CMAX);
+	  inputpad[l] = 0;
+    int error=r3token(inputpad);
+    }
+  entry.close();
+  modo=-1;
+  }
+esp_intr_enable(DisplayController.m_isr_handle);  
+}
+
+//--------------------------
+void savevar(File entry,int w) {
+entry.print("#"); 
+entry.print(code2word(dicc[w].name));
+entry.print(" "); 
+int *it=(int*)&memdata[dicc[w].mem&0xfffff];
+for (int i=((dicc[w].mem>>20)&0x3ff)>>2;i>0;i--) {
+	entry.print(dec(*it++));entry.print(" "); }
+}
+
+void emitcr(File entry,char *s) { 
+while (((unsigned char)*s)>31||*s==9) { entry.write(*s++); } 
+}
+
+void emitstr(File entry,char *s) { 
+entry.write(34);
+while (*s!=0) { if (*s==34) { entry.write(34); } entry.write(*s++); }
+entry.write(34);
+}
+
+int getval(int op,int nop) {
+if ((nop&0xff)==iLIT2) { return (op>>8)^((nop^0xff00)<<16); }
+return op>>8;
+}
+
+void savetoken(File entry,int op,int nop) {
+if ((op&0xff)>=INTERNALWORDS) {
+	entry.print((char*)wcoredicc[(op&0xff)-INTERNALWORDS]);
+} else {
+	switch (op&0xff) {
+    case iLITd:entry.print(dec(getval(op,nop)));break;
+    case iLITh:entry.print("$");entry.print(hex(getval(op,nop)));break;
+    case iLITb:entry.print("%");entry.print(bin(getval(op,nop)));break;
+    case iLITf:entry.print(fix(getval(op,nop)));break;	
+    case iLIT2:break;
+    case iLITs:emitstr(entry,(char*)&memdata[op>>8]);break;
+    case iCOM:entry.print("|");emitcr(entry,(char*)(char*)&memdata[op>>8]);break;
+    case iJMPR:entry.print(dec(op>>8));break;
+    case iJMP:entry.print(code2word(dicc[a2dicc(op>>8,0)].name));entry.print(" ;");break;
+    case iCALL:entry.print(code2word(dicc[a2dicc(op>>8,0)].name));break;
+    case iVAR:entry.print(code2word(dicc[a2dicc(op>>8,0x80000000)].name));break;
+    case iADR:entry.print("'");entry.print(code2word(dicc[a2dicc(op>>8,0)].name));break;
+    case iADRv:entry.print("'");entry.print(code2word(dicc[a2dicc(op>>8,0x80000000)].name));break;
+		}
+	}
+}
+
+void saveword(File entry,int w) {
+entry.print(":"); 
+entry.print(code2word(dicc[w].name));
+entry.print(" "); 
+int it=dicc[w].mem&0xfffff;
+for (int i=0;i<(dicc[w].mem>>20)&0x3ff;i++) {
+  savetoken(entry,memcode[it++],memcode[it]);entry.print(" "); }
+}
+
+void xcsave(char *filename) {
+esp_intr_disable(DisplayController.m_isr_handle); 
+
+File entry = SPIFFS.open(filename,"w");
+for (int i=0;i<ndicc;i++) {
+	if (dicc[i].mem&0x80000000) savevar(entry,i); else saveword(entry,i);
+	entry.print("\n");
+	}
+entry.close();
+esp_intr_enable(DisplayController.m_isr_handle);     
+}
+
+//--------------------------
+void xcnew() {
+r3init();
+modo=-1;
+}
+
+void xdir() {
+cink(63);cpaper(0);  
+esp_intr_disable(DisplayController.m_isr_handle);
+File root = SPIFFS.open("/");
+File file = root.openNextFile();
+while(file){
+  cprint((char*)file.name());
+  cemit(32);cprint(dec(file.size()));
+  cprint(" bytes");  
+  ccr();
+  file = root.openNextFile();
+  }
+file.close();
+root.close();
+esp_intr_enable(DisplayController.m_isr_handle);
+}
+
+void xwifi() {
+cink(63);cpaper(0);  
+/*
+cprint("Connecting to ");
+cprint((char*)ssid);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    cprint(".");
+  }
+  // Print local IP address and start web server
+ccr();
+cprint("WiFi connected.");
+cprint("IP address: ");
+cprint((char*)WiFi.localIP().toString().c_str());
+server.begin();	
+*/
+}
+
+////////////////////////////////////////////////////////////////
 // ----
 void emitcr(char *s) { 
 while (((unsigned char)*s)>31||*s==9) { cemit(*s++); } 
@@ -580,21 +688,21 @@ for (int i=0;i<ndicc;i++) {
 return -1;
 }
 
-void tokenprint(int op) {
+void tokenprint(int op,int nop) {
 if ((op&0xff)>=INTERNALWORDS) {
-  cink(7);
+	cink(7);
 	cprint((char*)wcoredicc[(op&0xff)-INTERNALWORDS]);
 } else {
 	switch (op&0xff) {
-    case iLITd:cink(15);cprint(dec(op>>8));break;
-    case iLITh:cink(15);cprint("$");cprint(hex(op>>8));break;
-    case iLITb:cink(15);cprint("%");cprint(bin(op>>8));break;
-    case iLITf:cink(15);cprint(fix(op>>8));break;	
+    case iLITd:cink(15);cprint(dec(getval(op,nop)));break;
+    case iLITh:cink(15);cprint("$");cprint(hex(getval(op,nop)));break;
+    case iLITb:cink(15);cprint("%");cprint(bin(getval(op,nop)));break;
+    case iLITf:cink(15);cprint(fix(getval(op,nop)));break;	
     case iLIT2:break;
     case iLITs:cink(63);cemit(34);emitstr((char*)&memdata[op>>8]);cemit(34);break;
     case iCOM:cink(21);cprint("|");emitcr((char*)&memdata[op>>8]);break;
     case iJMPR:cprint(dec(op>>8));break;
-    case iJMP:cprint(dec(op>>8));break;
+    case iJMP:cink(12);cprint(code2word(dicc[a2dicc(op>>8,0)].name));cink(7);cprint(" ;");break;
     case iCALL:cink(12);cprint(code2word(dicc[a2dicc(op>>8,0)].name));break;
     case iVAR:cink(12);cprint(code2word(dicc[a2dicc(op>>8,0x80000000)].name));break;
     case iADR:cink(60);cprint("'");cprint(code2word(dicc[a2dicc(op>>8,0)].name));break;
@@ -610,7 +718,7 @@ cink(3);cprint(":");
 cprint(code2word(dicc[w].name));cemit(32);
 int it=dicc[w].mem&0xfffff;
 for (int i=0;i<(dicc[w].mem>>20)&0x3ff;i++) {
-  tokenprint(memcode[it++]); }
+  tokenprint(memcode[it++],memcode[it]); }
 ccr();
 }
 
@@ -639,6 +747,7 @@ for (int i=0;i<ndicc;i++) {
 	if (dicc[i].mem&0x80000000) printvar(i); else printword(i);
 	}
 }
+
 
 void xedit(int token) {
 }
@@ -707,7 +816,7 @@ return -1;
 inline char toupp(char c) { return c&0xdf; }
 
 // compare two words, until space	
-int strequal(char *s1,char *s2)
+int strequal(char *s1,char *s2) 
 {
 while ((unsigned char)*s1>32) {
 	if (toupp(*s2++)!=toupp(*s1++)) return 0;
@@ -836,10 +945,10 @@ if (base==10) {	base=iLITd;
 } else if (base==2) { base=iLITb;
 } else if (base==32) { 	base=iLITb; }
 codetok((n<<8)|base); 
-//int32_t v=n;
-//if ((token<<8>>8)==n) return;
-//token=n>>;
-//codetok((token<<8)+LIT2); 
+int32_t v=n<<8>>8;
+if (v==n) return;
+v=((v^n)>>16)&0xff00;
+codetok(v|iLIT2); 
 }
 
 // dicc base in data definition
@@ -901,14 +1010,14 @@ level--;
 
 // compile word from core diccionary
 void compilaCORE(int n) {
-if (modo>1) { dataMAC(n);return; }
+if (modo>1) { dataMAC(n+INTERNALWORDS);return; }
 if (n==0) { 					// ;
 	if (level==0) modo=0; 
 	dicc[ndicc-1].mem|=((memc-(dicc[ndicc-1].mem&0xfffff))+1)<<20; // length in tokens
-//	if ((memcode[memc-1]&0xff)==iCALL && lastblock!=memc) { // avoid jmp to block
-//		memcode[memc-1]=(memcode[memc-1]^iCALL)|iJMP; // call->jmp avoid ret
-//		return;
-//		}
+	if ((memcode[memc-1]&0xff)==iCALL && lastblock!=memc) { // avoid jmp to block
+		memcode[memc-1]=(memcode[memc-1]^iCALL)|iJMP; // call->jmp avoid ret
+		return;
+		}
 	}
 if (n==1) { blockIn();return; }		//(	etiqueta
 if (n==2) { blockOut();return; }	//)	salto
@@ -1020,12 +1129,9 @@ int error=r3token(inputpad);
 if (modo==0&&andicc==ndicc&&error==0) { // only imm, not new definitions 
   codetok(iEND);
   runr3(amemc);
-  memd=amemd;memc=amemc; 
+  if (modo!=-1) { memd=amemd;memc=amemc; }  else { modo=0; }
   }
 
-//printstack();ccr();
-//dump();ccr();
-//dumpd();ccr();
 if (error==0) { cink(12);cpaper(0); } else { cink(63);cpaper(3); }
 cprint((char*)msg[error]);
 cink(63);cpaper(0);
@@ -1039,11 +1145,9 @@ ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for vertical sync
 
 void setup()
 {
-//Serial.begin(115200);Serial.write("ESP32 Forth Computer\n");
+Serial.begin(115200);Serial.write("ESP32 Forth Computer\n");
 
-if (!SPIFFS.begin()){ 
-//	Serial.write("SPIFFS error!\n");
-	return; }
+SPIFFS.begin(true);
 
 mainTaskHandle = xTaskGetCurrentTaskHandle();
 PS2Controller.begin(PS2Preset::KeyboardPort0); //PS2Preset::KeyboardPort0_MousePort1);
@@ -1055,7 +1159,6 @@ auto keyboard = PS2Controller.keyboard();
 //        keyboard->setLayout(&fabgl::UKLayout);
 //        keyboard->setLayout(&fabgl::GermanLayout);
 //        keyboard->setLayout(&fabgl::ItalianLayout);
-
   keyboard->setLayout(&fabgl::SpanishLayout);
         
 DisplayController.begin();
@@ -1069,7 +1172,7 @@ DisplayController.setDrawScanlineCallback(drawScanline);
   VGA_640x480_73Hz,
   VESA_640x480_75Hz,
   */
-	DisplayController.setResolution(VGA_640x480_60HzD); // 80x60 << better view
+	DisplayController.setResolution(VGA_640x400_60Hz); // 80x60 << better view
 #else
 	DisplayController.setResolution(QVGA_320x240_60Hz); // 40x30
 #endif
@@ -1098,5 +1201,4 @@ void loop()
 {
 cpad();
 redraw();
-//ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for vertical sync
 }
