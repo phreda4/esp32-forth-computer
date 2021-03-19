@@ -470,8 +470,8 @@ next:
 
 	case iKEY:NOS++;*NOS=TOS;TOS=getkey();goto next;
 	case iMEM:NOS++;*NOS=TOS;TOS=memd;goto next;
-	case iMEMSCR:NOS++;*NOS=TOS;TOS=(char*)screen-memdata;goto next; 
-	case iMEMFNT:NOS++;*NOS=TOS;TOS=(char*)romfont-memdata;goto next;
+	case iMEMSCR:NOS++;*NOS=TOS;TOS=(char*)screen-(char*)memdata;goto next; 
+	case iMEMFNT:NOS++;*NOS=TOS;TOS=(char*)romfont-(char*)memdata;goto next;
 	
 	// case iSLEEP
 	case iMSEC:
@@ -492,8 +492,8 @@ next:
 	// case iFORGET
 
 	case iDIR:xdir();goto next;
-	case iCLOAD:xcload((char*)TOS);return; // rewrite all codemem
-	case iCSAVE:xcsave((char*)TOS);TOS=*NOS;NOS--;goto next;
+	case iCLOAD:xcload((char*)&memdata[TOS]);return; // rewrite all codemem
+	case iCSAVE:xcsave((char*)&memdata[TOS]);TOS=*NOS;NOS--;goto next;
 	case iCNEW:xcnew();return; // rewrite all codemem
 	case iWIFI:xwifi();goto next;
   
@@ -545,6 +545,7 @@ cpaper(0);ccr();
 } 
 
 void xcload(char *filename) {
+  cprint(filename);
 esp_intr_disable(DisplayController.m_isr_handle);  
 if (SPIFFS.exists(filename)) {
   r3init();

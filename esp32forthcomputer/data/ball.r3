@@ -8,3 +8,4 @@
 :add xv 'x +! yv 'y +! ;
 :hit x 0? ( hitx ) 39 =? ( hitx ) drop y 0? ( hity ) 28 =? ( hity ) drop ;
 :frame ball add hit redraw ;
+:demo ( key 27 <>? drop cls frame ) drop ;
