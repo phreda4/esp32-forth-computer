@@ -191,6 +191,7 @@ bool down;
 int getkey() {
 auto keyboard = PS2Controller.keyboard();
 //if (!keyboard->virtualKeyAvailable()) { return 0; }
+
 auto vk=keyboard->getNextVirtualKey(&down,1);
 if (vk==fabgl::VK_NONE) return 0;
 return keyboard->virtualKeyToASCII(vk)|((down==false)?0x10000:0);
@@ -340,6 +341,7 @@ resetr3();
 void resetr3() {
 ATOS=0;
 ANOS=&stack[-1];
+level=0; 
 }
 
 // DATE TIME
@@ -355,6 +357,7 @@ register int32_t REGA=0;
 register int32_t REGB=0;
 register int32_t op=0;
 register int32_t ip=boot;
+int W;
 
 next:
   op=memcode[ip++]; //  printcode(op);
@@ -452,13 +455,28 @@ next:
     case iMULDIV:TOS=((int64_t)(*(NOS-1))*(*NOS)/TOS);NOS-=2;goto next;
     case iMULSH:TOS=((int64_t)(*(NOS-1)*(*NOS))>>TOS);NOS-=2;goto next;
     case iSHDIV:TOS=(int64_t)((*(NOS-1)<<TOS)/(*NOS));NOS-=2;goto next;
-    case iMOV:goto next;
-    case iMOVA:goto next;
-    case iFILL:goto next;
-    case iCMOV:goto next;
-    case iCMOVA:goto next;
-    case iCFILL:goto next;
-
+    case iMOV:
+		  W=(int)&memdata[*(NOS-1)];op=(int)&memdata[*NOS];
+		  while (TOS--) { *(int*)W=*(int*)op;W+=4;op+=4; }
+      NOS-=2;TOS=*NOS;NOS--;goto next;
+    case iMOVA:
+		  W=(int)&memdata[*(NOS-1)+(TOS<<2)];op=(int)&memdata[(*NOS)+(TOS<<2)];
+		  while (TOS--) { W-=4;op-=4;*(int*)W=*(int*)op; }  
+		  NOS-=2;TOS=*NOS;NOS--;goto next;
+    case iFILL:
+		  W=(int)&memdata[*(NOS-1)];op=*NOS;while (TOS--) { *(int*)W=op;W+=4; }	
+      NOS-=2;TOS=*NOS;NOS--;goto next;
+    case iCMOV:
+		  W=(int)&memdata[*(NOS-1)];op=(int)&memdata[*NOS];
+		  while (TOS--) { *(char*)W=*(char*)op;W++;op++; }
+      NOS-=2;TOS=*NOS;NOS--;goto next;
+    case iCMOVA:
+		  W=(int)&memdata[*(NOS-1)+TOS];op=(int)&memdata[*NOS+TOS];
+		  while (TOS--) { W--;op--;*(char*)W=*(char*)op; }
+      NOS-=2;TOS=*NOS;NOS--;goto next;
+    case iCFILL:
+		  W=(int)&memdata[*(NOS-1)];op=*NOS;while (TOS--) { *(char*)W=op;W++; }
+      NOS-=2;TOS=*NOS;NOS--;goto next;
     case iREDRAW:redraw();goto next;
 	case iINK:cink(TOS);TOS=*NOS;NOS--;goto next;
 	case iPAPER:cpaper(TOS);TOS=*NOS;NOS--;goto next;
@@ -545,15 +563,16 @@ cpaper(0);ccr();
 } 
 
 void xcload(char *filename) {
-  cprint(filename);
+cprint("loading...");
+int len,error;
 esp_intr_disable(DisplayController.m_isr_handle);  
 if (SPIFFS.exists(filename)) {
   r3init();
   File entry = SPIFFS.open(filename,"r");
   while(entry.available()){
-	  int l = entry.readBytesUntil('\n',inputpad,CMAX);
-	  inputpad[l] = 0;
-    int error=r3token(inputpad);
+	len=entry.readBytesUntil('\n',inputpad,CMAX);
+	inputpad[len]=0;
+    error=r3token(inputpad);
     }
   entry.close();
   modo=-1;
@@ -597,7 +616,7 @@ if ((op&0xff)>=INTERNALWORDS) {
     case iLITf:entry.print(fix(getval(op,nop)));break;	
     case iLIT2:break;
     case iLITs:emitstr(entry,(char*)&memdata[op>>8]);break;
-    case iCOM:entry.print("|");emitcr(entry,(char*)(char*)&memdata[op>>8]);break;
+    case iCOM:entry.print("|");emitcr(entry,(char*)&memdata[op>>8]);entry.print("\n");break;
     case iJMPR:entry.print(dec(op>>8));break;
     case iJMP:entry.print(code2word(dicc[a2dicc(op>>8,0)].name));entry.print(" ;");break;
     case iCALL:entry.print(code2word(dicc[a2dicc(op>>8,0)].name));break;
@@ -701,7 +720,7 @@ if ((op&0xff)>=INTERNALWORDS) {
     case iLITf:cink(15);cprint(fix(getval(op,nop)));break;	
     case iLIT2:break;
     case iLITs:cink(63);cemit(34);emitstr((char*)&memdata[op>>8]);cemit(34);break;
-    case iCOM:cink(21);cprint("|");emitcr((char*)&memdata[op>>8]);break;
+    case iCOM:cink(21);cprint("|");emitcr((char*)&memdata[op>>8]);ccr();break;
     case iJMPR:cprint(dec(op>>8));break;
     case iJMP:cink(12);cprint(code2word(dicc[a2dicc(op>>8,0)].name));cink(7);cprint(" ;");break;
     case iCALL:cink(12);cprint(code2word(dicc[a2dicc(op>>8,0)].name));break;
@@ -732,6 +751,15 @@ for (int i=((dicc[w].mem>>20)&0x3ff)>>2;i>0;i--) {
 ccr();
 }
 
+void emptykey() {
+while (getkey()!=0) ;
+}
+
+void waitkey() {
+redraw();
+while (getkey()==0) ;
+}
+
 void xlist(int token) {
 int w;
 if ((token&0xff)==iADR) {
@@ -743,9 +771,11 @@ if ((token&0xff)==iADR) {
 	printvar(w);
 	return;
 	} 
-ccr();
+emptykey();	
+ccls();
 for (int i=0;i<ndicc;i++) {
 	if (dicc[i].mem&0x80000000) printvar(i); else printword(i);
+	if ((i&7)==7) waitkey();
 	}
 }
 
@@ -892,7 +922,24 @@ modo=2;
 // compile a token (int)
 void codetok(int32_t nro) { memcode[memc++]=nro; }
 
-char *nextcom(char *) { }
+// store in datamemory a comment
+int comsave(char *str) 
+{
+int r=memd;
+for(;*str!=0;str++) { 
+	if (*str==13) { break; }
+	memdata[memd++]=*str;
+	}
+memdata[memd++]=0;	
+return r;
+}
+
+char *nextcom(char *str) { 
+str++;
+int ini=comsave(str);	
+codetok((ini<<8)+iCOM);
+return nextcr(str);  
+}
 
 // store in datamemory a string
 int datasave(char *str) 
@@ -944,7 +991,7 @@ if (modo>1) { datanro(n);return; }
 if (base==10) {	base=iLITd;
 } else if (base==16) { base=iLITh;
 } else if (base==2) { base=iLITb;
-} else if (base==32) { 	base=iLITb; }
+} else if (base==32) { 	base=iLITf; }
 codetok((n<<8)|base); 
 int32_t v=n<<8>>8;
 if (v==n) return;
@@ -1014,11 +1061,12 @@ void compilaCORE(int n) {
 if (modo>1) { dataMAC(n+INTERNALWORDS);return; }
 if (n==0) { 					// ;
 	if (level==0) modo=0; 
-	dicc[ndicc-1].mem|=((memc-(dicc[ndicc-1].mem&0xfffff))+1)<<20; // length in tokens
 	if ((memcode[memc-1]&0xff)==iCALL && lastblock!=memc) { // avoid jmp to block
 		memcode[memc-1]=(memcode[memc-1]^iCALL)|iJMP; // call->jmp avoid ret
+		dicc[ndicc-1].mem|=((memc-(dicc[ndicc-1].mem&0xfffff)))<<20;
 		return;
 		}
+	dicc[ndicc-1].mem|=((memc-(dicc[ndicc-1].mem&0xfffff))+1)<<20; // length in tokens		
 	}
 if (n==1) { blockIn();return; }		//(	etiqueta
 if (n==2) { blockOut();return; }	//)	salto
@@ -1039,9 +1087,7 @@ int cerror;
 
 // tokeniza string
 int r3token(char *str) {
-char *istr=str;
-level=0; //
-
+char *istr=str;	// first position for calculate place of error
 while(*str!=0) {
 	str=trim(str);if (*str==0) return 0;
 	switch (*str) {
@@ -1118,25 +1164,38 @@ const char *msg[]={
   "Word not found",
   "Addr not found",
 };
+int error;
+
+void promt() {
+if (modo==0||error!=0) {
+	if (error==0) { cink(12);cpaper(0); } else { cink(63);cpaper(3); }
+	cprint((char*)msg[error]);
+	}
+cink(63);cpaper(0);
+if (error==0) { cprompt(); } else { cedit(); }
+}
 
 void interpreter() {
-int32_t andicc=ndicc,amemd=memd,amemc=memc;
 
-ccr();
 if (inputpad[0]==0) { modo=0;cprompt();return; }
 
-int error=r3token(inputpad);
+if (modo!=0) {	// in definition
+	error=r3token(inputpad);
+	promt();
+	return;
+	}
+
+ccr();
+int andicc=ndicc,amemd=memd,amemc=memc;
+	
+error=r3token(inputpad);
 
 if (modo==0&&andicc==ndicc&&error==0) { // only imm, not new definitions 
   codetok(iEND);
   runr3(amemc);
   if (modo!=-1) { memd=amemd;memc=amemc; }  else { modo=0; }
   }
-
-if (error==0) { cink(12);cpaper(0); } else { cink(63);cpaper(3); }
-cprint((char*)msg[error]);
-cink(63);cpaper(0);
-if (error==0) { cprompt(); } else { cedit(); }
+promt();
 }
 
 //------------------- MAIN
@@ -1160,7 +1219,7 @@ auto keyboard = PS2Controller.keyboard();
 //        keyboard->setLayout(&fabgl::UKLayout);
 //        keyboard->setLayout(&fabgl::GermanLayout);
 //        keyboard->setLayout(&fabgl::ItalianLayout);
-  keyboard->setLayout(&fabgl::SpanishLayout);
+keyboard->setLayout(&fabgl::SpanishLayout);
         
 DisplayController.begin();
 DisplayController.setDrawScanlineCallback(drawScanline);
