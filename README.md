@@ -6,6 +6,21 @@ Computer made with ESP32 microcontroler
 * Inspired by JupiterAce computer
 * Inspired by ColorForth language
 
+## words
+
+System 
+
+```
+
+WORDS             | see dictionary
+.S                | see data stack
+DIR               | see filesystem 
+"filename" CLOAD  | Load code
+"filename" CSAVE  | save code
+CNEW              | reset machine
+
+```
+
 ## Development Videos
 
 https://www.youtube.com/channel/UCuhMgPZP7KoZFkoVAUyhw4A
@@ -26,4 +41,6 @@ in: src/dispdrivers/vgabasecontroller.h
 protected:
 ```
 
-##
+## ESP32 and conections
+
+ ![main menu](img/hard.jpg)
