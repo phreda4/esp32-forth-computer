@@ -1,7 +1,6 @@
 | simple snake game
 | PHREDA 2021
 
-#tc 30	| arena size
 #px 10 #py 10	| player pos
 #xv #yv			| player velocity
 #ax 15 #ay 15	| fruit pos
@@ -15,6 +14,8 @@
 :rand | -- r32
   seed 3141592621 * 1 + dup 'seed ! ;
 
+:lrand rand swap mod abs ;
+
 |----------------
 #.exit 0
 
@@ -26,6 +27,12 @@
 	( .exit 0? drop
 		dup ex
 		redraw ) 2drop ;
+
+#mwait
+
+:fps | fps --
+	( msec mwait <? drop )
+	1000 rot / + 'mwait ! ;
 
 |-----------------
 :pack | x y -- xy
@@ -46,45 +53,38 @@
 :hit? | x y -- x y
 	py <>? ( ; )
 	swap px <>? ( swap ; ) swap
-	5 'tail !
-	;
+	5 'tail ! ;
 
-:vlimit | v -- v
-	0 <? ( drop tc 1 - ; )
-	tc >=? ( drop 0 ; )
-	;
+:keyboard
+	key
+	$9600 =? ( -1 'yv ! 0 'xv ! )
+	$9800 =? ( 1 'yv ! 0 'xv ! )
+	$9a00 =? ( -1 'xv ! 0 'yv ! )
+	$9c00 =? ( 1 'xv ! 0 'yv ! )
+	27 =? ( exit )
+	drop ;
 
-:randtc | -- r
-	rand tc mod abs ;
+:snakemove
+	px xv + 0 <? ( drop 39 ) 39 >? ( drop 0 ) 'px !
+	py yv + 0 <? ( drop 28 ) 28 >? ( drop 0 ) 'py ! ;
+
+:newbug
+	1 'tail +! 39 lrand 'ax ! 28 lrand 'ay ! ;
 
 :game
 	cls
-
-	px xv + vlimit 'px !
-	py yv + vlimit 'py !
-
 	7 ink
-	'trail ( trail> <?
-		@+ unpack hit? drawbox ) drop
-
+	'trail ( trail> <? @+ unpack hit? drawbox ) drop
 	px py pack rpush
 	tail ( trail> 'trail - 2 >> <? rshift ) drop
-
-	px ax - py ay - or 0? (
-		1 'tail +! randtc 'ax ! randtc 'ay !
-		) drop
-
-	15 ink
-	ax ay atxy 15 emit
-
-	key
-	<up> =? ( -1 'yv ! 0 'xv ! )
-	<dn> =? ( 1 'yv ! 0 'xv ! )
-	<le> =? ( -1 'xv ! 0 'yv ! )
-	<ri> =? ( 1 'xv ! 0 'yv ! )
-	27 =? ( exit )
-	drop
+	px ax - py ay - or 0? ( newbug ) drop
+	15 ink ax ay atxy 15 emit
+	63 paper 3 ink
+	0 29 atxy " SNAKE - ESP32 Forth Computer - " print
+    0 paper
+	keyboard
+	snakemove
+	20 fps
 	;
-
 
 :snake 'game onshow ;

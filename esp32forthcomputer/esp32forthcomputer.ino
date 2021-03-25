@@ -190,11 +190,11 @@ bool down;
 
 int getkey() {
 auto keyboard = PS2Controller.keyboard();
-//if (!keyboard->virtualKeyAvailable()) { return 0; }
-
 auto vk=keyboard->getNextVirtualKey(&down,1);
 if (vk==fabgl::VK_NONE) return 0;
-return keyboard->virtualKeyToASCII(vk)|((down==false)?0x10000:0);
+int scanc=keyboard->virtualKeyToASCII(vk);
+if (scanc==-1) scanc=vk<<8;
+return scanc|((down==false)?0x10000:0);
 }
 
 void cpad() {
@@ -329,7 +329,6 @@ while (vname!=0) {
   }
 return (char*)&wname[i+1];
 }
-
 
 void r3init() {
 ndicc=0;
