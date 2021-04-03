@@ -252,6 +252,8 @@ const char *wcoredicc[]={
 
 "MSEC","TIME","DATE",
 
+"LOAD","SAVE","APPEND",
+
 "WORDS",".S","LIST","EDIT","DUMP",
 "DIR","CLOAD","CSAVE","CNEW","WIFI",
 ""
@@ -278,6 +280,8 @@ iKEY,iMEM,iMEMSCR,iMEMFNT,
 	
 	// iSLEEP
 iMSEC,iTIME,iIDATE,
+
+iLOAD,iSAVE,iAPPEND,
 
 iWORDS,iSTACK,iLIST,iEDIT,iDUMP,
 iDIR,iCLOAD,iCSAVE,iCNEW,iWIFI,
@@ -477,6 +481,7 @@ next:
 		  W=(int)&memdata[*(NOS-1)];op=*NOS;while (TOS--) { *(char*)W=op;W++; }
       NOS-=2;TOS=*NOS;NOS--;goto next;
     case iREDRAW:redraw();goto next;
+    
 	case iINK:cink(TOS);TOS=*NOS;NOS--;goto next;
 	case iPAPER:cpaper(TOS);TOS=*NOS;NOS--;goto next;
 	case iCLS:ccls();goto next;
@@ -500,6 +505,13 @@ next:
 		time(&now);localtime_r(&now, &timeinfo);
 		NOS++;*NOS=TOS;TOS=(timeinfo.tm_year+1900)<<16|(timeinfo.tm_mon+1)<<8|timeinfo.tm_mday;goto next;
 
+  // case XYPEN
+  // case BPEN
+  
+  case iLOAD: TOS=iload((char*)&memdata[TOS],*NOS);NOS--;goto next; // m "filename" -- lm 
+  case iSAVE: isave((char*)&memdata[TOS],*NOS,*(NOS-1));NOS-=2;TOS=*NOS;NOS--;goto next; // m cnt "filename" --
+  case iAPPEND: iappend((char*)&memdata[TOS],*NOS,*(NOS-1));NOS-=2;TOS=*NOS;NOS--;goto next;
+
 	
 	case iWORDS:xwords();goto next;
 	case iSTACK:xstack();goto next;
@@ -514,30 +526,42 @@ next:
 	case iCNEW:xcnew();return; // rewrite all codemem
 	case iWIFI:xwifi();goto next;
   
-	// case XYPEN
-	// case BPEN
-	
-/*	
-	case iLOAD:
-		file = SPIFFS.open("/test.txt", "r");
-		//file.available()){
-		file.read();
-		file.close();
-		goto next;
-	case iSAVE:
-		//SPIFFS.remove(path)
-		file = SPIFFS.open("/test.txt", "w");
-		file.println("Hello From ESP32 :-)");
-		file.close();
-		goto next;
-	case iAPEND:
-		file = SPIFFS.open("/test.txt", "a");
-		file.println("Hello From ESP32 :-)");
-		file.close();
-		goto next;
 
-*/	
     }
+}
+
+void fastmode(){ esp_intr_disable(DisplayController.m_isr_handle); }
+void slowmode(){ esp_intr_enable(DisplayController.m_isr_handle); }
+
+int iload(char *fn,int m) {
+int len;
+char *pmem=(char*)&memdata[m];
+fastmode();
+if (SPIFFS.exists(fn)) {
+  File entry=SPIFFS.open(fn,"r");
+  while(entry.available()){ len=entry.readBytes(pmem,512);pmem+=len; }
+  entry.close();
+  }
+slowmode();
+return (int)pmem-(int)memdata;
+}
+
+void isave(char *fn,int m,int c) {
+fastmode();
+unsigned char *pmem=(unsigned char*)&memdata[m];
+File entry = SPIFFS.open(fn,"w");
+entry.write(pmem,c);
+entry.close();
+slowmode();
+}
+
+void iappend(char *fn,int m,int c){
+fastmode();
+unsigned char *pmem=(unsigned char*)&memdata[m];
+File entry = SPIFFS.open(fn,"a");
+entry.write(pmem,c);
+entry.close();
+slowmode();
 }
 
 void xwords() {
@@ -564,7 +588,7 @@ cpaper(0);ccr();
 void xcload(char *filename) {
 cprint("loading...");
 int len,error;
-esp_intr_disable(DisplayController.m_isr_handle);  
+fastmode();
 if (SPIFFS.exists(filename)) {
   r3init();
   File entry = SPIFFS.open(filename,"r");
@@ -576,7 +600,7 @@ if (SPIFFS.exists(filename)) {
   entry.close();
   modo=-1;
   }
-esp_intr_enable(DisplayController.m_isr_handle);  
+slowmode();
 }
 
 //--------------------------
@@ -636,7 +660,7 @@ for (int i=0;i<(dicc[w].mem>>20)&0x3ff;i++) {
 }
 
 void xcsave(char *filename) {
-esp_intr_disable(DisplayController.m_isr_handle); 
+fastmode();
 
 File entry = SPIFFS.open(filename,"w");
 for (int i=0;i<ndicc;i++) {
@@ -644,7 +668,7 @@ for (int i=0;i<ndicc;i++) {
 	entry.print("\n");
 	}
 entry.close();
-esp_intr_enable(DisplayController.m_isr_handle);     
+slowmode();
 }
 
 //--------------------------
