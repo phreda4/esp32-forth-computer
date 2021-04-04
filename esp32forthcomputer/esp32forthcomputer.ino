@@ -254,8 +254,8 @@ const char *wcoredicc[]={
 
 "LOAD","SAVE","APPEND",
 
-"WORDS",".S","LIST","EDIT","DUMP",
-"DIR","CLOAD","CSAVE","CNEW","WIFI",
+//"WORDS",".S","LIST","EDIT","DUMP",
+//"CD","DIR","CLOAD","CSAVE","CNEW","WIFI",
 ""
 };
 
@@ -283,11 +283,16 @@ iMSEC,iTIME,iIDATE,
 
 iLOAD,iSAVE,iAPPEND,
 
-iWORDS,iSTACK,iLIST,iEDIT,iDUMP,
-iDIR,iCLOAD,iCSAVE,iCNEW,iWIFI,
+//iWORDS,iSTACK,iLIST,iEDIT,iDUMP,
+//iCD,iDIR,iCLOAD,iCSAVE,iCNEW,iWIFI,
 
 iiii, // last real
 };
+
+
+
+char fullfn[32];
+char nowpath[32];
 
 #define STACKSIZE 256
 #define DICCMEM 0x1ff
@@ -374,12 +379,10 @@ next:
     case iCOM:goto next;
     case iJMPR:ip+=op>>8;goto next;
     case iJMP:ip=op>>8;goto next;
-    case iCALL:RTOS--;*RTOS=ip;ip=op>>8;goto next;
-    
-    case iVAR:NOS++;*NOS=TOS;TOS=*(int*)&memdata[op>>8];goto next;
-    case iADR:NOS++;*NOS=TOS;TOS=(op>>8);goto next;
-    case iADRv:NOS++;*NOS=TOS;TOS=(op>>8);goto next;	
-	
+	case iCALL:RTOS--;*RTOS=ip;ip=op>>8;goto next;
+	case iVAR:NOS++;*NOS=TOS;TOS=*(int*)&memdata[op>>8];goto next;
+	case iADR:NOS++;*NOS=TOS;TOS=(op>>8);goto next;
+	case iADRv:NOS++;*NOS=TOS;TOS=(op>>8);goto next;	
     case iEND:ip=*RTOS;RTOS++;if (ip==0) { ATOS=TOS;ANOS=NOS;return; } goto next;  
     case OPEB:goto next;
     case CLOB:ip+=op>>8;goto next;
@@ -459,27 +462,27 @@ next:
     case iMULSH:TOS=((int64_t)(*(NOS-1)*(*NOS))>>TOS);NOS-=2;goto next;
     case iSHDIV:TOS=(int64_t)((*(NOS-1)<<TOS)/(*NOS));NOS-=2;goto next;
     case iMOV:
-		  W=(int)&memdata[*(NOS-1)];op=(int)&memdata[*NOS];
-		  while (TOS--) { *(int*)W=*(int*)op;W+=4;op+=4; }
-      NOS-=2;TOS=*NOS;NOS--;goto next;
+		W=(int)&memdata[*(NOS-1)];op=(int)&memdata[*NOS];
+		while (TOS--) { *(int*)W=*(int*)op;W+=4;op+=4; }
+		NOS-=2;TOS=*NOS;NOS--;goto next;
     case iMOVA:
-		  W=(int)&memdata[*(NOS-1)+(TOS<<2)];op=(int)&memdata[(*NOS)+(TOS<<2)];
-		  while (TOS--) { W-=4;op-=4;*(int*)W=*(int*)op; }  
-		  NOS-=2;TOS=*NOS;NOS--;goto next;
+		W=(int)&memdata[*(NOS-1)+(TOS<<2)];op=(int)&memdata[(*NOS)+(TOS<<2)];
+		while (TOS--) { W-=4;op-=4;*(int*)W=*(int*)op; }  
+		NOS-=2;TOS=*NOS;NOS--;goto next;
     case iFILL:
-		  W=(int)&memdata[*(NOS-1)];op=*NOS;while (TOS--) { *(int*)W=op;W+=4; }	
-      NOS-=2;TOS=*NOS;NOS--;goto next;
+		W=(int)&memdata[*(NOS-1)];op=*NOS;while (TOS--) { *(int*)W=op;W+=4; }	
+		NOS-=2;TOS=*NOS;NOS--;goto next;
     case iCMOV:
-		  W=(int)&memdata[*(NOS-1)];op=(int)&memdata[*NOS];
-		  while (TOS--) { *(char*)W=*(char*)op;W++;op++; }
-      NOS-=2;TOS=*NOS;NOS--;goto next;
+		W=(int)&memdata[*(NOS-1)];op=(int)&memdata[*NOS];
+		while (TOS--) { *(char*)W=*(char*)op;W++;op++; }
+		NOS-=2;TOS=*NOS;NOS--;goto next;
     case iCMOVA:
-		  W=(int)&memdata[*(NOS-1)+TOS];op=(int)&memdata[*NOS+TOS];
-		  while (TOS--) { W--;op--;*(char*)W=*(char*)op; }
-      NOS-=2;TOS=*NOS;NOS--;goto next;
+		W=(int)&memdata[*(NOS-1)+TOS];op=(int)&memdata[*NOS+TOS];
+		while (TOS--) { W--;op--;*(char*)W=*(char*)op; }
+		NOS-=2;TOS=*NOS;NOS--;goto next;
     case iCFILL:
-		  W=(int)&memdata[*(NOS-1)];op=*NOS;while (TOS--) { *(char*)W=op;W++; }
-      NOS-=2;TOS=*NOS;NOS--;goto next;
+		W=(int)&memdata[*(NOS-1)];op=*NOS;while (TOS--) { *(char*)W=op;W++; }
+		NOS-=2;TOS=*NOS;NOS--;goto next;
     case iREDRAW:redraw();goto next;
     
 	case iINK:cink(TOS);TOS=*NOS;NOS--;goto next;
@@ -508,24 +511,25 @@ next:
   // case XYPEN
   // case BPEN
   
-  case iLOAD: TOS=iload((char*)&memdata[TOS],*NOS);NOS--;goto next; // m "filename" -- lm 
-  case iSAVE: isave((char*)&memdata[TOS],*NOS,*(NOS-1));NOS-=2;TOS=*NOS;NOS--;goto next; // m cnt "filename" --
-  case iAPPEND: iappend((char*)&memdata[TOS],*NOS,*(NOS-1));NOS-=2;TOS=*NOS;NOS--;goto next;
+// m "filename" -- lm
+	case iLOAD: TOS=iload((char*)&memdata[TOS],*NOS);NOS--;goto next;
+// m cnt "filename" --	
+	case iSAVE: isave((char*)&memdata[TOS],*NOS,*(NOS-1));NOS-=2;TOS=*NOS;NOS--;goto next; 
+	case iAPPEND: iappend((char*)&memdata[TOS],*NOS,*(NOS-1));NOS-=2;TOS=*NOS;NOS--;goto next;
 
-	
-	case iWORDS:xwords();goto next;
-	case iSTACK:xstack();goto next;
-	case iLIST:xlist(memcode[ip-2]);goto next;
-	case iEDIT:xedit(memcode[ip-2]);goto next;	
-	case iDUMP:dump();goto next;
-	// case iFORGET
-
-	case iDIR:xdir();goto next;
-	case iCLOAD:xcload((char*)&memdata[TOS]);return; // rewrite all codemem
-	case iCSAVE:xcsave((char*)&memdata[TOS]);TOS=*NOS;NOS--;goto next;
-	case iCNEW:xcnew();return; // rewrite all codemem
-	case iWIFI:xwifi();goto next;
-  
+/*	
+case iWORDS:xwords();goto next;
+case iSTACK:xstack();goto next;
+case iLIST:xlist(memcode[ip-2]);goto next;
+case iEDIT:xedit(memcode[ip-2]);goto next;	
+case iDUMP:dump();goto next;
+case iCD:xcd((char*)&memdata[TOS]);TOS=*NOS;NOS--;goto next;
+case iDIR:xdir();goto next;
+case iCLOAD:xcload((char*)&memdata[TOS]);return; // rewrite all codemem --reset
+case iCSAVE:xcsave((char*)&memdata[TOS]);TOS=*NOS;NOS--;goto next;
+case iCNEW:xcnew();return; // rewrite all codemem
+case iWIFI:xwifi();goto next;
+*/  
 
     }
 }
@@ -563,6 +567,78 @@ entry.write(pmem,c);
 entry.close();
 slowmode();
 }
+
+//////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////
+
+char *filename(char *n) {
+char *pn=(char*)fullfn;
+char *pp=(char*)nowpath;
+while(*pp!=0) { *pn++=*pp++; }
+while(*n!=0) { *pn++=*n++; }
+*pn=0;
+return (char *)fullfn;
+}
+
+char *filenameo(char *n) {
+char *pp=(char*)nowpath;
+while (*pp!=0) { 
+	if (*pp!=*n) { return 0;}
+	pp++;n++;
+	}
+return n;
+}
+
+bool indir(char *n) {
+char *pp=(char*)nowpath;
+while (*pp!=0) { 
+  //cemit(*pp);cemit(*n);
+	if (*pp!=*n) { return false;}
+	pp++;n++;
+	}	
+return true;
+}
+
+void xdir() {
+cink(63);cpaper(0);  
+fastmode();
+File root = SPIFFS.open("/");
+File file = root.openNextFile();
+cprint(nowpath);ccr();
+char *fn;
+while(file){
+	fn=(char*)file.name();
+	if (indir(fn)==true) {
+		//fn=filenameo(fn);
+		cprint(fn);
+		cemit(32);cprint(dec(file.size()));
+		cprint(" bytes");  
+		ccr();
+		}
+	file = root.openNextFile();
+	}
+file.close();
+root.close();
+slowmode();
+//cprint(nowpath);ccr();
+}
+
+void xcd(char *n) {
+char *p=nowpath;
+while (*p!=0) { p++; }
+if (*n==0x2e && *(n+1)==0x2e) {
+  if (p>nowpath) { p--; }
+  while (p>nowpath && *p!=0x2f) { p--; }
+  p++;*p=0;
+  cprint("cd ");cprint(nowpath);ccr();
+  return;  
+  }
+while (*n!=0) { *p++=*n++; }
+if (*(p-1)!=0x2f) { *p++=0x2f; }
+*p=0;
+cprint("cd ");cprint(nowpath);ccr();
+}
+//////////////////////////////////////////////////////////////
 
 void xwords() {
 int i=0;
@@ -671,28 +747,35 @@ entry.close();
 slowmode();
 }
 
+//////////////////////////////////////////
+const char *wsysdicc[]={
+"WORDS",".S","LIST","EDIT","DUMP",
+"CD","DIR","CLOAD","CSAVE","CNEW",
+"WIFI"
+};
+
+void exSis(int n) {
+switch(n) {
+case 0:xwords();break;
+case 1:xstack();break;
+case 2:xlist(memcode[ip-2]);break;
+case 3:xedit(memcode[ip-2]);break;
+case 4:dump();break;
+case 5:xcd((char*)&memdata[TOS]);break;
+case 6:xdir();break;
+case 7:xcload((char*)&memdata[TOS]);break;
+case 8:xcsave((char*)&memdata[TOS]);break;
+case 9:xcnew();break;
+case 10:xwifi();break;
+	}
+}
+
 //--------------------------
 void xcnew() {
 r3init();
 modo=-1;
 }
 
-void xdir() {
-cink(63);cpaper(0);  
-esp_intr_disable(DisplayController.m_isr_handle);
-File root = SPIFFS.open("/");
-File file = root.openNextFile();
-while(file){
-  cprint((char*)file.name());
-  cemit(32);cprint(dec(file.size()));
-  cprint(" bytes");  
-  ccr();
-  file = root.openNextFile();
-  }
-file.close();
-root.close();
-esp_intr_enable(DisplayController.m_isr_handle);
-}
 
 void xwifi() {
 cink(63);cpaper(0);  
@@ -912,6 +995,16 @@ while (--i>-1) {
 return -1;
 };
 
+
+// ask for a word in the sys dicc
+int isSysWord(char *p) { nro=0;
+char **m=(char**)wsysdicc;
+while (**m!=0) {
+  if (strequal(*m,p)) return nro;
+  *m++;nro++; }
+return -1;  
+};
+
 void closevar() {
 if (ndicc==0) return;
 if (!(dicc[ndicc-1].mem&0x80000000)) return; // prev is var
@@ -958,9 +1051,9 @@ return r;
 }
 
 char *nextcom(char *str) { 
-str++;
-int ini=comsave(str);	
-codetok((ini<<8)+iCOM);
+//str++;
+//int ini=comsave(str);	
+//codetok((ini<<8)+iCOM);
 return nextcr(str);  
 }
 
@@ -1133,12 +1226,14 @@ while(*str!=0) {
 			if (isCore(str)) 
 				{ compilaCORE(nro);str=nextw(str);break; }
 			nro=isWord(str);
-			if (nro<0) { cerror=str-istr;return 1; }
-			if (modo<2) 
-				compilaWORD(nro); 
-			else 
-				compilaADDR(nro);
-			str=nextw(str);break;
+			if (nro>=0) {
+				if (modo<2) compilaWORD(nro); else compilaADDR(nro);
+				str=nextw(str);break;
+				}
+			//nro=isSysWord(str);
+			//if (nro>=0) { exSis(nro);return; }
+			cerror=str-istr;
+			return 1;
 		}
 	}
 return 0;
@@ -1282,6 +1377,7 @@ cprompt();
 
 void loop()
 {
+strcpy(nowpath,"/");
 cpad();
 redraw();
 }
