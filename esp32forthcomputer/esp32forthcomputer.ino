@@ -249,13 +249,9 @@ const char *wcoredicc[]={
 
 "REDRAW","INK","PAPER","CLS","ATXY","EMIT","PRINT","CR",
 "KEY","MEM","MEMSCR","MEMFNT",
-
 "MSEC","TIME","DATE",
-
 "LOAD","SAVE","APPEND",
 
-//"WORDS",".S","LIST","EDIT","DUMP",
-//"CD","DIR","CLOAD","CSAVE","CNEW","WIFI",
 ""
 };
 
@@ -277,19 +273,14 @@ iMOV,iMOVA,iFILL,iCMOV,iCMOVA,iCFILL,
 
 iREDRAW,iINK,iPAPER,iCLS,iATXY,iEMIT,iPRINT,iCR,
 iKEY,iMEM,iMEMSCR,iMEMFNT,
-	
+
 	// iSLEEP
 iMSEC,iTIME,iIDATE,
 
 iLOAD,iSAVE,iAPPEND,
 
-//iWORDS,iSTACK,iLIST,iEDIT,iDUMP,
-//iCD,iDIR,iCLOAD,iCSAVE,iCNEW,iWIFI,
-
 iiii, // last real
 };
-
-
 
 char fullfn[32];
 char nowpath[32];
@@ -517,20 +508,6 @@ next:
 	case iSAVE: isave((char*)&memdata[TOS],*NOS,*(NOS-1));NOS-=2;TOS=*NOS;NOS--;goto next; 
 	case iAPPEND: iappend((char*)&memdata[TOS],*NOS,*(NOS-1));NOS-=2;TOS=*NOS;NOS--;goto next;
 
-/*	
-case iWORDS:xwords();goto next;
-case iSTACK:xstack();goto next;
-case iLIST:xlist(memcode[ip-2]);goto next;
-case iEDIT:xedit(memcode[ip-2]);goto next;	
-case iDUMP:dump();goto next;
-case iCD:xcd((char*)&memdata[TOS]);TOS=*NOS;NOS--;goto next;
-case iDIR:xdir();goto next;
-case iCLOAD:xcload((char*)&memdata[TOS]);return; // rewrite all codemem --reset
-case iCSAVE:xcsave((char*)&memdata[TOS]);TOS=*NOS;NOS--;goto next;
-case iCNEW:xcnew();return; // rewrite all codemem
-case iWIFI:xwifi();goto next;
-*/  
-
     }
 }
 
@@ -570,6 +547,29 @@ slowmode();
 
 //////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////
+
+//////////////////////////////////////////
+const char *wsysdicc[]={
+"WORDS",".S","LIST","EDIT","DUMP",
+"CD","DIR","CLOAD","CSAVE","CNEW",
+"WIFI"
+};
+
+void exSis(int n,char *str) {
+switch(n) {
+case 0:xwords();break;
+case 1:xstack();break;
+case 2:xlist(str);break;
+case 3:xedit(str);break;
+case 4:dump();break;
+case 5:xcd(str);break;
+case 6:xdir();break;
+case 7:xcload(str);break;
+case 8:xcsave(str);break;
+case 9:xcnew();break;
+case 10:xwifi();break;
+  }
+}
 
 char *filename(char *n) {
 char *pn=(char*)fullfn;
@@ -621,22 +621,22 @@ file.close();
 root.close();
 slowmode();
 //cprint(nowpath);ccr();
+modo=-1;
 }
 
 void xcd(char *n) {
 char *p=nowpath;
 while (*p!=0) { p++; }
 if (*n==0x2e && *(n+1)==0x2e) {
-  if (p>nowpath) { p--; }
+  if (p>nowpath+1) { p-=2; }
   while (p>nowpath && *p!=0x2f) { p--; }
   p++;*p=0;
-  cprint("cd ");cprint(nowpath);ccr();
   return;  
   }
 while (*n!=0) { *p++=*n++; }
 if (*(p-1)!=0x2f) { *p++=0x2f; }
 *p=0;
-cprint("cd ");cprint(nowpath);ccr();
+modo=-1;
 }
 //////////////////////////////////////////////////////////////
 
@@ -652,6 +652,7 @@ for (i=0;i<ndicc;i++) {
   cprint(code2word(dicc[i].name));cemit(32);    
   }
 ccr();
+modo=-1;
 }
 
 void xstack() {
@@ -747,33 +748,10 @@ entry.close();
 slowmode();
 }
 
-//////////////////////////////////////////
-const char *wsysdicc[]={
-"WORDS",".S","LIST","EDIT","DUMP",
-"CD","DIR","CLOAD","CSAVE","CNEW",
-"WIFI"
-};
-
-void exSis(int n) {
-switch(n) {
-case 0:xwords();break;
-case 1:xstack();break;
-case 2:xlist(memcode[ip-2]);break;
-case 3:xedit(memcode[ip-2]);break;
-case 4:dump();break;
-case 5:xcd((char*)&memdata[TOS]);break;
-case 6:xdir();break;
-case 7:xcload((char*)&memdata[TOS]);break;
-case 8:xcsave((char*)&memdata[TOS]);break;
-case 9:xcnew();break;
-case 10:xwifi();break;
-	}
-}
 
 //--------------------------
 void xcnew() {
 r3init();
-modo=-1;
 }
 
 
@@ -866,7 +844,8 @@ redraw();
 while (getkey()==0) ;
 }
 
-void xlist(int token) {
+void xlist(char *str) {
+/*	
 int w;
 if ((token&0xff)==iADR) {
 	w=a2dicc(token>>8,0x00000000);
@@ -877,6 +856,7 @@ if ((token&0xff)==iADR) {
 	printvar(w);
 	return;
 	} 
+*/	
 emptykey();	
 ccls();
 for (int i=0;i<ndicc;i++) {
@@ -886,7 +866,7 @@ for (int i=0;i<ndicc;i++) {
 }
 
 
-void xedit(int token) {
+void xedit(char *str) {
 }
 //------------------ TOKENIZER
 
@@ -1230,8 +1210,9 @@ while(*str!=0) {
 				if (modo<2) compilaWORD(nro); else compilaADDR(nro);
 				str=nextw(str);break;
 				}
-			//nro=isSysWord(str);
-			//if (nro>=0) { exSis(nro);return; }
+			nro=isSysWord(str);
+			if (nro>=0) { 
+			  str=trim(nextw(str));exSis(nro,str);return 0; }
 			cerror=str-istr;
 			return 1;
 		}
@@ -1307,12 +1288,12 @@ ccr();
 int andicc=ndicc,amemd=memd,amemc=memc;
 	
 error=r3token(inputpad);
-
 if (modo==0&&andicc==ndicc&&error==0) { // only imm, not new definitions 
   codetok(iEND);
   runr3(amemc);
-  if (modo!=-1) { memd=amemd;memc=amemc; }  else { modo=0; }
+  memd=amemd;memc=amemc;
   }
+if (modo==-1) { modo=0; }
 promt();
 }
 
@@ -1321,8 +1302,15 @@ void redraw() {
 ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for vertical sync
 }
 
-void setup()
-{
+
+void inter() {
+while (1) {
+  cpad();
+  redraw();
+  }
+}
+
+void setup() {
 Serial.begin(115200);Serial.write("ESP32 Forth Computer\n");
 
 SPIFFS.begin(true);
@@ -1373,11 +1361,8 @@ ccr();
 
 cink(63);
 cprompt();
+strcpy(nowpath,"/");
+inter();
 }
 
-void loop()
-{
-strcpy(nowpath,"/");
-cpad();
-redraw();
-}
+void loop() { }
