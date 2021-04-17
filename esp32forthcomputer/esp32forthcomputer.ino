@@ -9,10 +9,7 @@
 #include "fabgl.h"
 #include "fontjrom.h"
 
-// Replace with your network credentials
 //const char* ssid = "Adelaida";
-//const char* password = "33134253";
-// Set web server port number to 80
 //WiFiServer server(80);
 
 TaskHandle_t  mainTaskHandle;
@@ -281,9 +278,6 @@ iLOAD,iSAVE,iAPPEND,
 
 iiii, // last real
 };
-
-char fullfn[32];
-char nowpath[32];
 
 #define STACKSIZE 256
 #define DICCMEM 0x1ff
@@ -571,6 +565,11 @@ case 10:xwifi();break;
   }
 }
 
+char fullfn[32];
+char nowpath[32];
+char lastdir[32];
+int cpath;
+
 char *filename(char *n) {
 char *pn=(char*)fullfn;
 char *pp=(char*)nowpath;
@@ -589,14 +588,42 @@ while (*pp!=0) {
 return n;
 }
 
-bool indir(char *n) {
-char *pp=(char*)nowpath;
-while (*pp!=0) { 
-  //cemit(*pp);cemit(*n);
-	if (*pp!=*n) { return false;}
-	pp++;n++;
-	}	
-return true;
+
+void cpyldir(char *n) {
+char *l,*p=(char *)lastdir;
+while (*n!=0) { 
+	if (*n==0x2f) { l=p; }
+	*p++=*n++; }
+*(l+1)=0;
+}
+
+int indir(char *n) {
+char *l,*nl=n;
+char *lp=0,*np=nowpath;
+char *ll=0,*ld=lastdir;
+while (*nl!=0) { 
+	if (*nl==0x2f) { l=nl; } // last /
+	if (*nl!=*np) { if (lp==0) { lp=nl; } } // first diferent from nowpad
+	if (*nl!=*ld) { if (ll==0) { ll=nl; } } // first diferent from lastdir
+	nl++;np++;ld++; }
+Serial.write(" np: ");Serial.write(dec((int)(lp-n)));    
+Serial.write(" ll: ");Serial.write(dec((int)(ll-n)));    
+Serial.write(" l: ");Serial.write(dec((int)(l-n)));    
+Serial.write(" -- ");  
+if ((int)(lp-n)<cpath) { 
+  return 0;
+  }
+cpyldir(n);
+if (lp<l) { 
+  if (ll<l) {
+    cprint(lastdir);
+    ccr();
+    }
+  Serial.write("(1)");  
+  return 0;
+  } // not in path
+Serial.write("(3)");  
+return 1;
 }
 
 void xdir() {
@@ -606,10 +633,15 @@ File root = SPIFFS.open("/");
 File file = root.openNextFile();
 cprint(nowpath);ccr();
 char *fn;
+int di;
+cpyldir((char *)file.name());
 while(file){
 	fn=(char*)file.name();
-	if (indir(fn)==true) {
-		//fn=filenameo(fn);
+  Serial.write(fn);Serial.write(" -- ");
+  di=indir(fn);
+  Serial.write(dec(di));Serial.write("\n");
+	if (di>0) {
+		fn=filenameo(fn);
 		cprint(fn);
 		cemit(32);cprint(dec(file.size()));
 		cprint(" bytes");  
@@ -631,11 +663,13 @@ if (*n==0x2e && *(n+1)==0x2e) {
   if (p>nowpath+1) { p-=2; }
   while (p>nowpath && *p!=0x2f) { p--; }
   p++;*p=0;
+  cpath=(int)p-(int)nowpath;
   return;  
   }
 while (*n!=0) { *p++=*n++; }
 if (*(p-1)!=0x2f) { *p++=0x2f; }
 *p=0;
+cpath=(int)p-(int)nowpath;
 modo=-1;
 }
 //////////////////////////////////////////////////////////////
@@ -662,13 +696,14 @@ if (stack<=ANOS) { cpaper(0);cemit(32);cpaper(52);cprint(dec(ATOS)); }
 cpaper(0);ccr();
 } 
 
-void xcload(char *filename) {
+void xcload(char *fn) {
 cprint("loading...");
 int len,error;
 fastmode();
-if (SPIFFS.exists(filename)) {
+char *fno=filename(fn);
+if (SPIFFS.exists(fno)) {
   r3init();
-  File entry = SPIFFS.open(filename,"r");
+  File entry = SPIFFS.open(fno,"r");
   while(entry.available()){
 	len=entry.readBytesUntil('\n',inputpad,CMAX);
 	inputpad[len]=0;
@@ -736,10 +771,10 @@ for (int i=0;i<(dicc[w].mem>>20)&0x3ff;i++) {
   savetoken(entry,memcode[it++],memcode[it]);entry.print(" "); }
 }
 
-void xcsave(char *filename) {
+void xcsave(char *fn) {
 fastmode();
 
-File entry = SPIFFS.open(filename,"w");
+File entry = SPIFFS.open(filename(fn),"w");
 for (int i=0;i<ndicc;i++) {
 	if (dicc[i].mem&0x80000000) savevar(entry,i); else saveword(entry,i);
 	entry.print("\n");
@@ -760,7 +795,7 @@ cink(63);cpaper(0);
 /*
 cprint("Connecting to ");
 cprint((char*)ssid);
-  WiFi.begin(ssid, password);
+  WiFi.begin(ssid, "33134253");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     cprint(".");
@@ -1362,6 +1397,7 @@ ccr();
 cink(63);
 cprompt();
 strcpy(nowpath,"/");
+cpath=1;
 inter();
 }
 

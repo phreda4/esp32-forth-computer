@@ -215,8 +215,6 @@
 		13 =? ( drop nip 1 - ; )
 		drop swap ) drop ;
 
-
-
 :spfill | cnt adr -- adr
 	swap ( 1? 1 - 32 emit ) drop  ;
 
@@ -226,7 +224,9 @@
 		13 =? ( drop spfill ; )
 		9 =? ( 32 nip )
 		emit
-		swap ) drop ;
+		swap ) drop 
+	( c@+ 0? ( drop 1 - ; ) 
+		13 <>? drop ) drop ;
 
 |ccx xsele <? ( drop ; ) drop
 |	( c@+ 1? 13 <>? drop ) drop 1 -		| eat line to cr or 0
@@ -238,7 +238,7 @@
 	emitline ;
 
 :linenro | lin -- lin
-	dup ylinea + dec 3 .r. print 32 emit drop ;
+	dup ylinea + dec 3 .r. print 32 emit ;
 
 :drawcode
 	pantaini>
@@ -260,7 +260,7 @@
 	9 =? ( drop 4 'xcursor +! ; )
 	1 'xcursor +! ;
 
-:drawcursor
+:adcursor | -- adr
 	ylinea 'ycursor ! 0 'xcursor !
 	pantaini> ( fuente> <? c@+ emitcur ) drop
 	| hscroll
@@ -268,14 +268,22 @@
 	xlinea <? ( dup 'xlinea ! )
 	xlinea wcode + 4 - >=? ( dup wcode - 5 + 'xlinea ! ) | 4 linenumber
 	drop
-	xcursor ycursor atxy
+	ycursor 40 * xcursor + 2 << MEMSCR + 
+|	xcursor ycursor atxy
 	;
-
+	
+:setcursor
+	adcursor dup @ $800000 or swap ! ;
+	
+:clrcursor
+	adcursor dup @ $800000 not and swap ! ;
+	
 :editmodeke
 |	panelcontrol 1? ( drop controlkey ; ) drop
 
 	key
 	0? ( drop ; )
+	clrcursor
 	dup $ff and =? ( 32 >=? ( modo ex drawscreen ; ) )
 
 	<back> =? ( back )
@@ -296,6 +304,7 @@
 
 	drop
 	drawscreen
+	setcursor
 	;
 |-------------------------
 :barrac | control+
@@ -323,7 +332,7 @@
 	;
 
 :drawscreen
-	barra drawcode ;
+	barra drawcode setcursor ;
 
 :editando
 	editmodeke ;
