@@ -31,14 +31,14 @@
 		1 - $20 over c!
 		) drop ;
 
-##<esc> $7b00 ##>esc< $17b00
-##<ins> $7f00
-##<del>	$8100
-##<back>	$8300
-##<home>	$8400
-##<end>	$8600
-##<tab> $8d00
-##<ret> $8e00
+##<esc> $1b ##>esc< $1001b
+##<ins> $8000
+##<del>	$7f
+##<back> $8
+##<home>	$8500
+##<end>	$8700
+##<tab> $9
+##<ret> $d
 ##<pgup>	$9200
 ##<pgdn>	$9400
 ##<up>		$9600
@@ -116,14 +116,8 @@
 	count + '$fuente !
 	;
 
-
-:dd
-	>a
-	16 ( 1? 1 -
-		8 ( 1? 1 -
-			a> c@+ hex 32 emit print >a
-			) drop cr
-		) drop ;
+:edsave | "" --
+	fuente $fuente over - 'name save ;
 
 |----- edicion
 :lins  | c --
@@ -258,6 +252,7 @@
 :emitcur
 	13 =? ( drop 1 'ycursor +! 0 'xcursor ! ; )
 	9 =? ( drop 4 'xcursor +! ; )
+	drop
 	1 'xcursor +! ;
 
 :adcursor | -- adr
@@ -268,44 +263,16 @@
 	xlinea <? ( dup 'xlinea ! )
 	xlinea wcode + 4 - >=? ( dup wcode - 5 + 'xlinea ! ) | 4 linenumber
 	drop
-	ycursor 40 * xcursor + 2 << MEMSCR + 
+	ycursor 1 + 40 * xcursor + 4 + 2 << MEMSCR +
 |	xcursor ycursor atxy
 	;
-	
+
 :setcursor
 	adcursor dup @ $800000 or swap ! ;
-	
+
 :clrcursor
 	adcursor dup @ $800000 not and swap ! ;
-	
-:editmodeke
-|	panelcontrol 1? ( drop controlkey ; ) drop
 
-	key
-	0? ( drop ; )
-	clrcursor
-	dup $ff and =? ( 32 >=? ( modo ex drawscreen ; ) )
-
-	<back> =? ( back )
-	<del> =? ( del )
-	<up> =? ( karriba ) <dn> =? ( kabajo )
-	<ri> =? ( kder ) <le> =? ( kizq )
-	<home> =? ( khome ) <end> =? ( kend )
-	<pgup> =? ( kpgup ) <pgdn> =? ( kpgdn )
-	<ins> =? (  modo
-				'lins =? ( drop 'lover 'modo ! ; )
-				drop 'lins 'modo ! )
-	<ret> =? (  13 modo ex )
-	<tab> =? (  9 modo ex )
-	>esc< =? ( exit )
-
-|	<ctrl> =? ( controlon ) >ctrl< =? ( controloff )
-|	<shift> =? ( 1 'mshift ! ) >shift< =? ( 0 'mshift ! )
-
-	drop
-	drawscreen
-	setcursor
-	;
 |-------------------------
 :barrac | control+
 	"^Xcut " print
@@ -322,20 +289,44 @@
 	0 0 atxy
 	":r3 editor " print
 	xcursor 1 + dec print ":" print
-	ycursor 1 + dec print
-
+	ycursor 1 + dec print " " print
+	fuente dec print " " print
+	$fuente dec print " " print
 	0 28  atxy
-	panelcontrol 1? ( drop barrac ; ) drop
-|	'name print
-	" name " print
+|	panelcontrol 1? ( drop barrac ; ) drop
+	'name print
 	0 paper
 	;
 
 :drawscreen
 	barra drawcode setcursor ;
 
-:editando
-	editmodeke ;
+:teclado
+|	panelcontrol 1? ( drop controlkey ; ) drop
+
+	key 0? ( drop ; )
+
+	clrcursor
+	dup $ff and =? ( 32 >=? ( 127 <? (  modo ex drawscreen ; ) ) )
+	<back> =? ( back )
+	<del> =? ( del )
+	<up> =? ( karriba ) <dn> =? ( kabajo )
+	<ri> =? ( kder ) <le> =? ( kizq )
+	<home> =? ( khome ) <end> =? ( kend )
+	<pgup> =? ( kpgup ) <pgdn> =? ( kpgdn )
+	<ins> =? (  modo
+				'lins =? ( drop 'lover 'modo ! ; )
+				drop 'lins 'modo ! )
+	<ret> =? ( 13 modo ex )
+	<tab> =? ( 9 modo ex )
+	>esc< =? ( exit )
+
+|	<ctrl> =? ( controlon ) >ctrl< =? ( controloff )
+|	<shift> =? ( 1 'mshift ! ) >shift< =? ( 0 'mshift ! )
+
+	drop
+	drawscreen
+	;
 
 |	emode
 |	0? ( editmodeke )
@@ -349,7 +340,7 @@
 	mode!edit
 	cls
 	drawscreen
-	'editando onshow
+	'teclado onshow
 	;
 
 ::edram
@@ -365,5 +356,7 @@
 
 :ed
 	edram
-	"/colors.r3" edload
-	edrun ;
+	"/scratch.r3" edload
+	edrun
+	"/scratch.r3" edsave
+	;
