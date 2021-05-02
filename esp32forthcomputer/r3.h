@@ -1,3 +1,4 @@
+
 //
 // PHREDA 2021
 //
@@ -22,6 +23,7 @@ const char *wcoredicc[]={
 "KEY","MEM","MEMSCR","MEMFNT",
 "MSEC","TIME","DATE",
 "LOAD","SAVE","APPEND",
+"RUN",
 
 ""
 };
@@ -45,12 +47,9 @@ iMOV,iMOVA,iFILL,iCMOV,iCMOVA,iCFILL,
 
 iREDRAW,iINK,iPAPER,iCLS,iATXY,iEMIT,iPRINT,iCR,
 iKEY,iMEM,iMEMSCR,iMEMFNT,
-
-  // iSLEEP
 iMSEC,iTIME,iIDATE,
-
 iLOAD,iSAVE,iAPPEND,
-
+iRUN,
 iiii, // last real
 };
 
@@ -77,5 +76,15 @@ int8_t  memdata[DATAMEM];
 uint32_t memd=0;
 
 int cerror;
+
+void fastmode();
+void slowmode();
+
+void r3init();
+void resetr3();
+void runr3(int32_t boot);
+
+int r3token(char *str);
+char *code2word(int64_t vname);
 
 #endif

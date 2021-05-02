@@ -1,0 +1,62 @@
+goal
+
+Build a complete computer with a esp32 microcontroller
+
+Like a C64 or Jupiter Ace but with R3 Lang
+
+Use FabGL library for devices
+	generate VGA signal
+	read keyboard
+	read mouse
+	play Sound
+
+
+R3 Lang
+
+A colorforth derived
+
+Focus in simplify programer experience
+
+-Remove compiler manipulation from code
+
+	Clasic forth
+
+	IMMEDIATE MODE
+	HERE , - generate code
+	CREATE DOES> - define behavior in compiler
+
+	ColorForth
+
+	HERE ,
+	CYAN WORDS - Explicit inline
+
+-Use prefix instead of color (really coloforth have prefix in the codification)
+
+-Rethink control flow because this is made with control compiler mechanism
+
+-No access to ASM
+
+Questionable decision (but is a experiment!!)
+
+-0 terminate string
+-file instead blocks
+-Not use floating point numbers
+-Only a Framebuffer, no console
+-Rigid interface with OS, easy convert to other OS but less flexible,
+no library can be attached
+
+
+Prefixs
+
+#DATA 33    		| define data, 32 bit signed inter
+:CODE dup * ;       | define word
+
+DATA	| push 33 in data stack
+'DATA	| push DATA address in stack
+CODE	| execute CODE
+'CODE	| push CODE address in stack
+"this is a string"	| push address (in data memory) of this bytes
+%ff %101 	| Hexa an binary numbers
+^include.r3	| recursive include system (in esp32 is not recursive)
+| comment	| comment
+

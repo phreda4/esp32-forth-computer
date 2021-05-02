@@ -297,10 +297,6 @@ while (*nl!=0) {
 	if (*nl!=*np) { if (lp==0) { lp=nl; } } // first diferent from nowpad
 	if (*nl!=*ld) { if (ll==0) { ll=nl; } } // first diferent from lastdir
 	nl++;np++;ld++; }
-Serial.write(" np: ");Serial.write(dec((int)(lp-n)));    
-Serial.write(" ll: ");Serial.write(dec((int)(ll-n)));    
-Serial.write(" l: ");Serial.write(dec((int)(l-n)));    
-Serial.write(" -- ");  
 if ((int)(lp-n)<cpath) { 
   return 0;
   }
@@ -310,10 +306,8 @@ if (lp<l) {
     cprint(lastdir);
     ccr();
     }
-  Serial.write("(1)");  
   return 0;
   } // not in path
-Serial.write("(3)");  
 return 1;
 }
 
@@ -328,14 +322,12 @@ int di;
 cpyldir((char *)file.name());
 while(file){
 	fn=(char*)file.name();
-  Serial.write(fn);Serial.write(" -- ");
-  di=indir(fn);
-  Serial.write(dec(di));Serial.write("\n");
+	di=indir(fn);
 	if (di>0) {
 		fn=filenameo(fn);
 		cprint(fn);
 		cemit(32);cprint(dec(file.size()));
-		cprint(" bytes");  
+		cprint("b");  
 		ccr();
 		}
 	file = root.openNextFile();
@@ -387,95 +379,98 @@ if (stack<=ANOS) { cpaper(0);cemit(32);cpaper(52);cprint(dec(ATOS)); }
 cpaper(0);ccr();
 } 
 
-void xcload(char *fn) {
-cprint("loading...");
+////////////////////////////////////////////////
+// includes
+
+char inames[1024];
+char *pinames;
+char *includes[32];
+int cincludes;
+int cnttok,cntdef;
+
+void isinclude(char *str)
+{
+includes[cincludes]=pinames;
+while ((unsigned char)*str>31) { *pinames++=*str++; }
+*pinames++=0;
+//printf("[%s]",filename);
+cincludes++;
+}
+
+// resolve includes, recursive definition
+void r3includes(char *str) 
+{
+while(*str!=0) {
+	str=trim(str);
+	switch (*str) {
+		case '^':isinclude(str+1);str=nextcr(str);break;// include
+		case '|':str=nextcom(str);break;				// comments	
+		case ':':cntdef++;modo=1;str=nextw(str);break;	// code
+		case '#':cntdef++;modo=0;str=nextw(str);break;	// data	
+		case '"':cnttok+=modo;str=nextstr(str);break;	// strings		
+		default: cnttok+=modo;str=nextw(str);break; 	// other
+		}
+	}
+}
+
+void cload(char *fn) {
 int len,error,lin=0;
-fastmode();
-char *fno=filename(fn);
-if (SPIFFS.exists(fno)) {
-  r3init();
-  File entry = SPIFFS.open(fno,"r");
+
+if (SPIFFS.exists(fn)) {
+  File entry = SPIFFS.open(fn,"r");
   while(entry.available()){
 	len=entry.readBytesUntil('\n',inputpad,CMAX);
 	inputpad[len]=0;lin++;
     error=r3token(inputpad);
 	if (error!=0) { 
-		cprint("error line ");		
-		cprint(dec(lin));
-		ccr();
-    cprint(inputpad);
-    ccr();
-    slowmode();
+		cprint("error line ");cprint(dec(lin));ccr();
+		cprint(inputpad); ccr();
 		return; }
     }
   entry.close();
   modo=-1;
   }
+}
+
+void xcload(char *fn) {
+char fname[32];
+
+pinames=inames;	// clear nameincludes
+cincludes=0;	// cnt includes
+cntdef=0;		// cnt definitions
+cnttok=0;		// cnt tokens
+
+fastmode();
+int len;
+char *fno=filename(fn);
+strcpy(fname,fno);
+// search includes, only one file
+File entry = SPIFFS.open(fno,"r");
+while(entry.available()){
+  len=entry.readBytesUntil('\n',inputpad,CMAX);
+  inputpad[len]=0;
+  r3includes(inputpad);
+  }
+entry.close();
+
+r3init();
+for(int i=0;i<cincludes;i++) {
+  fno=filename(includes[i]);
+  cprint(fno);ccr();
+  cload(fno);
+	}
+cprint(fname);ccr();
+cload(fname);
+
 slowmode();
 }
 
 //--------------------------
-void savevar(File entry,int w) {
-entry.print("#"); 
-entry.print(code2word(dicc[w].name));
-entry.print(" "); 
-int *it=(int*)&memdata[dicc[w].mem&0xfffff];
-for (int i=((dicc[w].mem>>20)&0x3ff)>>2;i>0;i--) {
-	entry.print(dec(*it++));entry.print(" "); }
-}
-
-void emitcr(File entry,char *s) { 
-while (((unsigned char)*s)>31||*s==9) { entry.write(*s++); } 
-}
-
-void emitstr(File entry,char *s) { 
-entry.write(34);
-while (*s!=0) { if (*s==34) { entry.write(34); } entry.write(*s++); }
-entry.write(34);
-}
-
-int getval(int op,int nop) {
-if ((nop&0xff)==iLIT2) { return (op>>8)^((nop^0xff00)<<16); }
-return op>>8;
-}
-
-void savetoken(File entry,int op,int nop) {
-if ((op&0xff)>=INTERNALWORDS) {
-	entry.print((char*)wcoredicc[(op&0xff)-INTERNALWORDS]);
-} else {
-	switch (op&0xff) {
-    case iLITd:entry.print(dec(getval(op,nop)));break;
-    case iLITh:entry.print("$");entry.print(hex(getval(op,nop)));break;
-    case iLITb:entry.print("%");entry.print(bin(getval(op,nop)));break;
-    case iLITf:entry.print(fix(getval(op,nop)));break;	
-    case iLIT2:break;
-    case iLITs:emitstr(entry,(char*)&memdata[op>>8]);break;
-    case iCOM:entry.print("|");emitcr(entry,(char*)&memdata[op>>8]);entry.print("\n");break;
-    case iJMPR:entry.print(dec(op>>8));break;
-    case iJMP:entry.print(code2word(dicc[a2dicc(op>>8,0)].name));entry.print(" ;");break;
-    case iCALL:entry.print(code2word(dicc[a2dicc(op>>8,0)].name));break;
-    case iVAR:entry.print(code2word(dicc[a2dicc(op>>8,0x80000000)].name));break;
-    case iADR:entry.print("'");entry.print(code2word(dicc[a2dicc(op>>8,0)].name));break;
-    case iADRv:entry.print("'");entry.print(code2word(dicc[a2dicc(op>>8,0x80000000)].name));break;
-		}
-	}
-}
-
-void saveword(File entry,int w) {
-entry.print(":"); 
-entry.print(code2word(dicc[w].name));
-entry.print(" "); 
-int it=dicc[w].mem&0xfffff;
-for (int i=0;i<(dicc[w].mem>>20)&0x3ff;i++) {
-  savetoken(entry,memcode[it++],memcode[it]);entry.print(" "); }
-}
-
 void xcsave(char *fn) {
 fastmode();
 
 File entry = SPIFFS.open(filename(fn),"w");
 for (int i=0;i<ndicc;i++) {
-	if (dicc[i].mem&0x80000000) savevar(entry,i); else saveword(entry,i);
 	entry.print("\n");
 	}
 entry.close();
@@ -516,6 +511,11 @@ while (((unsigned char)*s)>31||*s==9) { cemit(*s++); }
 
 void emitstr(char *s) { 
 while (*s!=0) { cemit(*s++); }
+}
+
+int getval(int op,int nop) {
+if ((nop&0xff)==iLIT2) { return (op>>8)^((nop^0xff00)<<16); }
+return op>>8;
 }
 
 // search word by address
@@ -604,18 +604,19 @@ void xedit(char *str) {
 }
 
 void dump() {
-cprint("code");ccr();
-for(int i=0;i<memc;i++) { cprint(hex(memcode[i]));cprint(" "); }
-cprint("data");ccr();
-for(int i=0;i<memd;i++) { cprint(hex(memdata[i]));cprint(" "); }
-ccr();
-cprint("DICC");ccr();	
-for(int i=0;i<ndicc;i++) {
-	cprint(code2word(dicc[i].name));
-	cprint(" ");
-	cprint(hex(dicc[i].mem));
-	ccr();
-	}
+int d=ATOS;
+unsigned char b;
+char *mem=(char*)&memdata[ATOS];
+for (int j=0;j<16;j++) {
+  cprint(hex(d));cprint(":");
+  for(int i=0;i<16;i++) { 
+    b=(unsigned char)*mem;
+    if (i&1) { cink(63); } else { cink(42); }
+    if (b<16) { cprint("0"); } 
+    cprint(hex(b));
+    mem++;d++; }
+  ccr(); 
+  }
 }
 
 const char *prompt[]={">",":>","#>","#>","#>"};
@@ -684,7 +685,6 @@ promt();
 void redraw() {
 ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for vertical sync
 }
-
 
 void inter() {
 while (1) {

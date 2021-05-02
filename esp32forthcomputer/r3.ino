@@ -1,30 +1,6 @@
-
+// r32 tokenizer and vm
+// PHREDA 2021
 //------------------- INTERPRETER
-
-
-
-inline int char6bit(int c) { return ((((c-0x1f)&0x40)>>1)|(c-0x1f))&0x3f;}
-
-int64_t word2code(char *str) {
-int c;
-int64_t v=0;
-while ((c=*str++)>32) { v=(v<<6)|char6bit(c); }
-return v;
-}
-
-char wname[16];
-
-inline int bit6char(int c) { return (c&0x3f)+0x1f; }
-
-char *code2word(int64_t vname) {
-wname[15]=0;
-int i=14;
-while (vname!=0) {
-  wname[i]=bit6char((int)vname);
-  i--;vname>>=6;
-  }
-return (char*)&wname[i+1];
-}
 
 void r3init() {
 ndicc=0;
@@ -204,6 +180,7 @@ next:
 	case iSAVE: isave((char*)&memdata[TOS],*(NOS-1),*NOS);NOS-=2;TOS=*NOS;NOS--;goto next; 
 	case iAPPEND: iappend((char*)&memdata[TOS],*NOS,*(NOS-1));NOS-=2;TOS=*NOS;NOS--;goto next;
 
+  case iRUN: xcload((char*)&memdata[TOS]);resetr3();ip=dicc[ndicc-1].mem&0xfffff;goto next;
     }
 }
 
@@ -242,6 +219,29 @@ slowmode();
 }
 
 //------------------ TOKENIZER
+
+inline int char6bit(int c) { return ((((c-0x1f)&0x40)>>1)|(c-0x1f))&0x3f;}
+
+int64_t word2code(char *str) {
+int c;
+int64_t v=0;
+while ((c=*str++)>32) { v=(v<<6)|char6bit(c); }
+return v;
+}
+
+char wname[16];
+
+inline int bit6char(int c) { return (c&0x3f)+0x1f; }
+
+char *code2word(int64_t vname) {
+wname[15]=0;
+int i=14;
+while (vname!=0) {
+  wname[i]=bit6char((int)vname);
+  i--;vname>>=6;
+  }
+return (char*)&wname[i+1];
+}
 
 int32_t nro; // for parse
 int32_t base; // for parse
@@ -403,10 +403,11 @@ memdata[memd++]=0;
 return r;
 }
 
+// skip coment
 char *nextcom(char *str) { 
 //str++;
 //int ini=comsave(str);	
-//codetok((ini<<8)+iCOM);
+//codetok((ini<<8)+iCOM); // not save
 return nextcr(str);  
 }
 

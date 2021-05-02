@@ -1,62 +1,8 @@
 | editor for ESP32
 | PHREDA 2021
-
 |-------------------------
-#.exit 0
-
-:exit
-	1 '.exit ! ;
-
-:onshow | vector --
-	0 '.exit !
-	( .exit 0? drop
-		dup ex
-		redraw ) 2drop ;
-
-::min	| a b -- m
-	over - dup 31 >> and + ;
-
-::max	| a b -- m
-	over swap - dup 31 >> and - ;
-
-#buf * 16
-
-:bb 'buf 15 + 0 over c! 1 - ;
-:dec bb swap ( 10 /mod $30 + pick2 c! swap 1 - swap 1? ) drop 1 + ;
-:hex bb swap ( dup $f and 9 >? ( 7 + ) $30 + pick2 c! 4 >>> swap 1 - swap 1? ) drop 1 + ;
-
-::.r. | b nro -- b
-	'buf 15 + swap -
-	swap ( over >?
-		1 - $20 over c!
-		) drop ;
-
-##<esc> $1b ##>esc< $1001b
-##<ins> $8000
-##<del>	$7f
-##<back> $8
-##<home>	$8500
-##<end>	$8700
-##<tab> $9
-##<ret> $d
-##<pgup>	$9200
-##<pgdn>	$9400
-##<up>		$9600
-##<dn>	$9800
-##<le>	$9a00
-##<ri>	$9c00
-##<f1>	$9f00
-##<f2> $a000
-##<f3> $a100
-##<f4> $a200
-##<f5> $a300
-##<f6> $a400
-##<f7> $a500
-##<f8> $a600
-##<f9> $a700
-##<f10> $a800
-##<f11> $a900
-##<f12> $aa00
+^lib/base.r3
+^lib/keys.r3
 
 |:emit  drop ;
 |:print drop ;
@@ -145,20 +91,20 @@
 
 :<<13 | a -- a
 	( fuente >=?
-		 dup c@
+		dup c@
 		13 =? ( drop ; )
 		drop 1 - ) ;
 
 :>>13 | a -- a
 	( $fuente <?
-		 dup c@
+		dup c@
 		13 =? ( drop 1 - ; ) | quitar el 1 -
 		drop 1 + )
 	drop $fuente 2 - ;
 
 :khome	fuente> 1 - <<13 1 + 'fuente> ! ;
 
-:kend	fuente> >>13  1 + 'fuente> ! ;
+:kend	fuente> >>13 1 + 'fuente> ! ;
 
 :scrollup | 'fuente -- 'fuente
 	pantaini> 1 - <<13 1 - <<13  1 + 'pantaini> !
@@ -210,26 +156,18 @@
 		drop swap ) drop ;
 
 :spfill | cnt adr -- adr
-	swap ( 1? 1 - 32 emit ) drop  ;
+	swap ( 1? 1 - 32 emit ) drop ;
 
-:emitline | adr -- adr'
-	35 ( 1? 1 - swap
+:drawline | adr -- adr'
+	iniline
+	36 ( 1? 1 - swap
 		c@+ 0? ( drop 1 - spfill ; )
 		13 =? ( drop spfill ; )
 		9 =? ( 32 nip )
 		emit
-		swap ) drop 
-	( c@+ 0? ( drop 1 - ; ) 
+		swap ) drop
+	( c@+ 0? ( drop 1 - ; )
 		13 <>? drop ) drop ;
-
-|ccx xsele <? ( drop ; ) drop
-|	( c@+ 1? 13 <>? drop ) drop 1 -		| eat line to cr or 0
-|	39 gotox
-|	$ffffff 'ink ! "." print
-
-:drawline
-|	iniline
-	emitline ;
 
 :linenro | lin -- lin
 	dup ylinea + dec 3 .r. print 32 emit ;
@@ -263,7 +201,7 @@
 	xlinea <? ( dup 'xlinea ! )
 	xlinea wcode + 4 - >=? ( dup wcode - 5 + 'xlinea ! ) | 4 linenumber
 	drop
-	ycursor 1 + 40 * xcursor + 4 + 2 << MEMSCR +
+	ycursor 1 + 40 * xcursor xlinea - + 4 + 2 << MEMSCR +
 |	xcursor ycursor atxy
 	;
 
@@ -274,6 +212,11 @@
 	adcursor dup @ $800000 not and swap ! ;
 
 |-------------------------
+:runcode
+	"/scratch.r3" edsave
+	"/scratch.r3" run
+	;
+	
 :barrac | control+
 	"^Xcut " print
 	"^Copy " print
@@ -290,8 +233,6 @@
 	":r3 editor " print
 	xcursor 1 + dec print ":" print
 	ycursor 1 + dec print " " print
-	fuente dec print " " print
-	$fuente dec print " " print
 	0 28  atxy
 |	panelcontrol 1? ( drop barrac ; ) drop
 	'name print
@@ -310,8 +251,10 @@
 	dup $ff and =? ( 32 >=? ( 127 <? (  modo ex drawscreen ; ) ) )
 	<back> =? ( back )
 	<del> =? ( del )
-	<up> =? ( karriba ) <dn> =? ( kabajo )
-	<ri> =? ( kder ) <le> =? ( kizq )
+	<up> =? ( karriba )
+	<dn> =? ( kabajo )
+	<ri> =? ( kder )
+	<le> =? ( kizq )
 	<home> =? ( khome ) <end> =? ( kend )
 	<pgup> =? ( kpgup ) <pgdn> =? ( kpgdn )
 	<ins> =? (  modo
@@ -324,6 +267,7 @@
 |	<ctrl> =? ( controlon ) >ctrl< =? ( controloff )
 |	<shift> =? ( 1 'mshift ! ) >shift< =? ( 0 'mshift ! )
 
+	<f1> =? ( runcode )
 	drop
 	drawscreen
 	;
@@ -358,5 +302,6 @@
 	edram
 	"/scratch.r3" edload
 	edrun
+	cls
 	"/scratch.r3" edsave
 	;

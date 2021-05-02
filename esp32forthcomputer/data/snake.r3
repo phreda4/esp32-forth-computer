@@ -1,5 +1,7 @@
 | simple snake game
 | PHREDA 2021
+^lib/base.r3
+^lib/keys.r3
 
 #px 10 #py 10	| player pos
 #xv #yv			| player velocity
@@ -16,23 +18,6 @@
 
 :lrand rand swap mod abs ;
 
-|----------------
-#.exit 0
-
-:exit
-	1 '.exit ! ;
-
-:onshow | vector --
-	0 '.exit !
-	( .exit 0? drop
-		dup ex
-		redraw ) 2drop ;
-
-#mwait
-
-:fps | fps --
-	( msec mwait <? drop )
-	1000 rot / + 'mwait ! ;
 
 |-----------------
 :pack | x y -- xy
