@@ -214,7 +214,7 @@
 |-------------------------
 :runcode
 	"/scratch.r3" edsave
-	"/scratch.r3" run
+	"scratch.r3" run
 	;
 	
 :barrac | control+

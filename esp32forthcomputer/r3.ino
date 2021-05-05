@@ -180,7 +180,15 @@ next:
 	case iSAVE: isave((char*)&memdata[TOS],*(NOS-1),*NOS);NOS-=2;TOS=*NOS;NOS--;goto next; 
 	case iAPPEND: iappend((char*)&memdata[TOS],*NOS,*(NOS-1));NOS-=2;TOS=*NOS;NOS--;goto next;
 
-  case iRUN: xcload((char*)&memdata[TOS]);resetr3();ip=dicc[ndicc-1].mem&0xfffff;goto next;
+  case iRUN: xcload((char*)&memdata[TOS]);
+          resetr3();
+          stack[STACKSIZE-1]=0;  
+          TOS=ATOS;NOS=ANOS;
+          RTOS=&stack[STACKSIZE-1];
+          REGA=REGB=0;
+          op=0;          
+          ip=dicc[ndicc-1].mem&0xfffff;
+          goto next;
     }
 }
 
