@@ -31,7 +31,7 @@ Use FabGL library for devices
 	play Sound
 
 
-##R3 Lang
+## R3 Lang
 
 A colorforth derived language
 
@@ -66,7 +66,7 @@ Questionable decision (but is a experiment!!)
 no library can be attached, need to be integrated in words
 
 
-##Prefixes
+## Prefixes
 
 ```
 #DATA 33    		| define data, 32 bit signed inter
@@ -92,9 +92,9 @@ or double test
 1 2 <? (is 1 less 2 ?) drop 2
 ```
 
-##Two constructor
+## Control Flow structures
 
-###IF, when the conditional are in front of block
+### IF, when the conditional are in front of block
 
 ```
 0? ( "top of stack is zero" print )
@@ -114,7 +114,7 @@ a good thing!!
 	test10 print ;
 ```
 
-###WHILE, when the conditional are in the block
+### WHILE, when the conditional are in the block
 
 
 ```
@@ -133,7 +133,7 @@ for traverse memory, fill buffer with 0
 'buffer $ff ( 1? 0 rot !+ swap ) 2drop
 ```
 
-##Interactivity.
+## Interactivity.
 
 firt aproach
 
