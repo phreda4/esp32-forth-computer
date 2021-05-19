@@ -237,7 +237,7 @@ if (down) {
 const char *wsysdicc[]={
 "WORDS",".S","LIST","EDIT","DUMP",
 "CD","DIR","CLOAD","CSAVE","CNEW",
-"WIFI"
+"WIFI","CAT",
 };
 
 void exSis(int n,char *str) {
@@ -253,6 +253,7 @@ case 7:xcload(str);break;
 case 8:xcsave(str);break;
 case 9:xcnew();break;
 case 10:xwifi();break;
+case 11:xcat(str);break;
   }
 }
 
@@ -428,7 +429,6 @@ if (SPIFFS.exists(fn)) {
 		return; }
     }
   entry.close();
-  modo=-1;
   }
 }
 
@@ -465,6 +465,21 @@ cload(fname);
 slowmode();
 }
 
+void xcat(char *fn) {
+fastmode();
+int len;
+char *fno=filename(fn);
+if (SPIFFS.exists(fno)) {
+  File entry = SPIFFS.open(fno,"r");
+  while(entry.available()){
+  len=entry.readBytesUntil('\n',inputpad,CMAX);
+  inputpad[len]=0;lin++;
+  cprint(inputpad);ccr();
+    }
+  entry.close();
+  }
+slowmode();
+}
 //--------------------------
 void xcsave(char *fn) {
 fastmode();
