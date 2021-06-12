@@ -1,4 +1,3 @@
-
 //
 // PHREDA 2021
 //
@@ -23,7 +22,7 @@ const char *wcoredicc[]={
 "KEY","MEM","MEMSCR","MEMFNT",
 "MSEC","TIME","DATE",
 "LOAD","SAVE","APPEND",
-"RUN",
+"RUN","FILENOW",
 
 ""
 };
@@ -49,7 +48,7 @@ iREDRAW,iINK,iPAPER,iCLS,iATXY,iEMIT,iPRINT,iCR,
 iKEY,iMEM,iMEMSCR,iMEMFNT,
 iMSEC,iTIME,iIDATE,
 iLOAD,iSAVE,iAPPEND,
-iRUN,
+iRUN,iFILENOW,
 iiii, // last real
 };
 

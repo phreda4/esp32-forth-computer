@@ -2,6 +2,11 @@
 // PHREDA 2021
 //------------------- INTERPRETER
 
+char *fn;
+void filenamer3(char *str) {
+fn=str;
+}
+
 void r3init() {
 ndicc=0;
 memc=memd=0;
@@ -189,6 +194,7 @@ next:
           op=0;          
           ip=dicc[ndicc-1].mem&0xfffff;
           goto next;
+  case iFILENOW:NOS++;*NOS=TOS;TOS=(char*)fn-(char*)memdata;goto next;
     }
 }
 
@@ -242,7 +248,7 @@ char wname[16];
 inline int bit6char(int c) { return (c&0x3f)+0x1f; }
 
 char *code2word(int64_t vname) {
-vname=&0xfffffffffffffff;
+vname&=0xfffffffffffffff;
 wname[15]=0;
 int i=14;
 while (vname!=0) {

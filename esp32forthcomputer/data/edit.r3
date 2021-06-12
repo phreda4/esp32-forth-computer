@@ -42,15 +42,9 @@
 	swap c! ;
 
 ::count | s1 -- s1 cnt
-	dup >a
-	0 ( a@+ dup $01010101 -
-		swap not and
-		$80808080 nand? drop 4 + )
-	$80 and? ( drop ; )
-	$8000 and? ( drop 1 + ; )
-	$800000 and? ( drop 2 + ; )
-	drop 3 + ;
-
+	0 over ( c@+ 1?
+		drop swap 1 + swap ) 2drop  ;
+		
 ::strcpy | src des --
 	( swap c@+ 1? rot c!+ ) nip swap c! ;
 
@@ -62,8 +56,8 @@
 	count + '$fuente !
 	;
 
-:edsave | "" --
-	fuente $fuente over - 'name save ;
+:edsave | --
+	fuente 0 $fuente c!+ over - 'name save ;
 
 |----- edicion
 :lins  | c --
@@ -118,15 +112,6 @@
 
 :kend	fuente> >>13 1 + 'fuente> ! ;
 
-:scrollup | 'fuente -- 'fuente
-	pantaini> 1 - <<13 1 - <<13  1 + 'pantaini> !
-	ylinea 1? ( 1 - ) 'ylinea ! ;
-
-:scrolldw
-	pantaini> >>13 2 + 'pantaini> !
-	pantafin> >>13 2 + 'pantafin> !
-	1 'ylinea +! ;
-
 :colcur
 	fuente> 1 - <<13 swap - ;
 
@@ -137,7 +122,8 @@
 	dup 1 - <<13			| cnt cur cura
 	swap over - 		| cnt cura cur-cura
 	rot min + fuente max
-	'fuente> ! ;
+	'fuente> ! 
+	;
 
 :kabajo
 	fuente> $fuente >=? ( drop ; )
@@ -147,7 +133,9 @@
 	dup 1 + >>13 1 + 	| cnt cura curb
 	over -
 	rot min +
-	'fuente> ! ;
+	'fuente> ! 
+	;
+
 
 :kder	fuente> $fuente <? ( 1 + 'fuente> ! ; ) drop ;
 :kizq	fuente> fuente >? ( 1 - 'fuente> ! ; ) drop ;
@@ -184,6 +172,16 @@
 :linenro | lin -- lin
 	dup ylinea + dec 3 .r. print 32 emit ;
 
+:scrollup | 'fuente -- 'fuente
+	pantaini> 1 - <<13 1 - <<13  1 + 'pantaini> !
+	ylinea 1? ( 1 - ) 'ylinea ! ;
+
+:scrolldw
+	pantaini> >>13 2 + 'pantaini> !
+	pantafin> >>13 2 + 'pantafin> !
+	1 'ylinea +! ;
+
+
 :drawcode
 	pantaini>
 	1 ( 28 <?
@@ -192,10 +190,12 @@
 		swap drawline
 		swap 1 + ) drop
 	$fuente <? ( 1 - ) 'pantafin> !
+	
 |	fuente>
-|	( pantafin> >? scrolldw )
 |	( pantaini> <? scrollup )
+|	( pantafin> >? scrolldw )
 |	drop
+	
 	;
 
 |..............................
@@ -305,6 +305,7 @@
 	dup 'fuente> !
 	dup '$fuente !
 	dup 'pantaini> !
+	dup 'pantafin> !
 	$3fff +				| 16KB
 	'here  ! | -- FREE
 	0 here !
@@ -312,8 +313,8 @@
 
 :ed
 	edram
-	"/scratch.r3" edload
+	filenow edload
 	edrun
 	cls
-	"/scratch.r3" edsave
+	edsave
 	;

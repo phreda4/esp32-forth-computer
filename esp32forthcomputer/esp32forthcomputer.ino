@@ -11,7 +11,7 @@
 
 #include "r3.h"
 
-//const char* ssid = "Adelaida";
+//const char* ssid = "";
 //WiFiServer server(80);
 
 TaskHandle_t  mainTaskHandle;
@@ -106,10 +106,10 @@ if (cpos>=&screen[SCREEN_SIZE]) { cscroll();cpos-=SCREEN_W; }
 }
 
 //------------------- CONVERSION
-char strbuff[64];
+char strbuff[33];
 
 char *dec(int v) {
-char *p=&strbuff[62];*(p+1)=0;
+char *p=&strbuff[31];*(p+1)=0;
 int va=abs(v);
 if (va<0) { return "-2147483648"; }
 do { *p--=(va%10)+0x30;va/=10; } while (va!=0);
@@ -118,20 +118,20 @@ return p;
 }
 
 char *bin(int v) {
-char *p=&strbuff[62];*(p+1)=0;
+char *p=&strbuff[31];*(p+1)=0;
 int va=abs(v);
 do { *p--=(va&1)+0x30;va>>=1; } while (va!=0);
-if (v<0) { *p=0x2d; } else { p++; }
+//if (v<0) { *p=0x2d; } else { p++; }
 return p;
 }
 
 char *hex(int v) {
-char *p=&strbuff[62];*(p+1)=0;
+char *p=&strbuff[31];*(p+1)=0;
 int va=abs(v);
 do { 
   if ((va&0xf)>9) { *p--=(va&0xf)+0x37; } else { *p--=(va&0xf)+0x30; }
   va>>=4; } while (va!=0);
-if (v<0) { *p=0x2d; } else { p++; }
+//if (v<0) { *p=0x2d; } else { p++; }
 return p;
 }
 
@@ -240,16 +240,18 @@ const char *wsysdicc[]={
 "WIFI","CAT",
 };
 
+char filenow[32];
+
 void exSis(int n,char *str) {
 switch(n) {
 case 0:xwords();break;
 case 1:xstack();break;
 case 2:xlist(str);break;
-case 3:xedit(str);break;
+case 3:xedit();break;
 case 4:dump();break;
 case 5:xcd(str);break;
 case 6:xdir();break;
-case 7:xcload(str);break;
+case 7:strcpy(filenow,filename(str));filenamer3(filenow);xcload(filenow);break;
 case 8:xcsave(str);break;
 case 9:xcnew();break;
 case 10:xwifi();break;
@@ -279,7 +281,6 @@ while (*pp!=0) {
 	}
 return n;
 }
-
 
 void cpyldir(char *n) {
 char *l,*p=(char *)lastdir;
@@ -442,10 +443,10 @@ cnttok=0;		// cnt tokens
 
 fastmode();
 int len;
-char *fno=filename(fn);
-strcpy(fname,fno);
+//char *fno=filename(fn);
+strcpy(fname,fn);
 // search includes, only one file
-File entry = SPIFFS.open(fno,"r");
+File entry = SPIFFS.open(fn,"r");
 while(entry.available()){
   len=entry.readBytesUntil('\n',inputpad,CMAX);
   inputpad[len]=0;
@@ -455,9 +456,9 @@ entry.close();
 
 r3init();
 for(int i=0;i<cincludes;i++) {
-  fno=filename(includes[i]);
-  cprint(fno);ccr();
-  cload(fno);
+  fn=filename(includes[i]);
+  cprint(fn);ccr();
+  cload(fn);
 	}
 cprint(fname);ccr();
 cload(fname);
@@ -467,7 +468,7 @@ slowmode();
 
 void xcat(char *fn) {
 fastmode();
-int len;
+int len,lin=0;
 char *fno=filename(fn);
 if (SPIFFS.exists(fno)) {
   File entry = SPIFFS.open(fno,"r");
@@ -483,6 +484,8 @@ slowmode();
 //--------------------------
 void xcsave(char *fn) {
 fastmode();
+// 
+if (*fn!=0) { fn=filenow; } else { strcpy(filenow,filename(fn)); }
 
 File entry = SPIFFS.open(filename(fn),"w");
 for (int i=0;i<ndicc;i++) {
@@ -615,7 +618,11 @@ for (int i=0;i<ndicc;i++) {
 }
 
 
-void xedit(char *str) {
+void xedit() {
+xcload("/edit.r3");  
+filenamer3(filenow);
+runr3(dicc[ndicc-1].mem&0xfffff);
+xcload(filenow);
 }
 
 void dump() {
@@ -719,10 +726,10 @@ PS2Controller.begin(PS2Preset::KeyboardPort0); //PS2Preset::KeyboardPort0_MouseP
 auto keyboard = PS2Controller.keyboard();
 //keyboard->suspendVirtualKeyGeneration(false);
 
-//        keyboard->setLayout(&fabgl::USLayout);
-//        keyboard->setLayout(&fabgl::UKLayout);
-//        keyboard->setLayout(&fabgl::GermanLayout);
-//        keyboard->setLayout(&fabgl::ItalianLayout);
+// keyboard->setLayout(&fabgl::USLayout);
+// keyboard->setLayout(&fabgl::UKLayout);
+// keyboard->setLayout(&fabgl::GermanLayout);
+// keyboard->setLayout(&fabgl::ItalianLayout);
 keyboard->setLayout(&fabgl::SpanishLayout);
         
 DisplayController.begin();
@@ -761,6 +768,7 @@ cink(63);
 cprompt();
 strcpy(nowpath,"/");
 cpath=1;
+strcpy(filenow,"/new.r3");
 inter();
 }
 
