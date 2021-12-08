@@ -16,7 +16,21 @@
 
 TaskHandle_t  mainTaskHandle;
 
-fabgl::VGADirectController DisplayController;
+class VGADirectControllerPublic : public fabgl::VGADirectController
+{
+ public:
+  intr_handle_t GetISRHandle() 
+  {
+   return m_isr_handle;
+  }
+  uint8_t GetHVSync()
+  {
+    return m_HVSync;
+  }
+};
+
+//fabgl::VGADirectController DisplayController;
+VGADirectControllerPublic DisplayController;
 fabgl::PS2Controller PS2Controller;
 
 //------------------- CONSOLE
@@ -44,10 +58,16 @@ uint32_t addrc=scanLine>>3;addrc=(addrc<<4)+(addrc<<6); //*80
 uint32_t addrc=scanLine>>3;addrc=(addrc<<3)+(addrc<<5); //*40
 #endif
 uint32_t cc,*ac=&screen[addrc];
-for (byte x=SCREEN_W;x!=0;x--)	{ // 80 40
+//Modificacion JJ
+//uint8_t jj_m_HVSync = DisplayController.createBlankRawPixel();
+uint8_t jj_m_HVSync = DisplayController.GetHVSync();
+for (byte x=SCREEN_W;x!=0;x--)	
+{ // 80 40
   cc=*ac++;
-  c[0]=((cc>>16)&0x3f)|DisplayController.m_HVSync;
-  c[1]=((cc>>24)&0x3f)|DisplayController.m_HVSync;
+  //JJ c[0]=((cc>>16)&0x3f)|DisplayController.m_HVSync;
+  //JJ c[1]=((cc>>24)&0x3f)|DisplayController.m_HVSync;
+  c[0]=((cc>>16)&0x3f)|jj_m_HVSync;
+  c[1]=((cc>>24)&0x3f)|jj_m_HVSync;
   if (cc&0x80000000) {  // graphics x2
     bf=cc>>(((scanLine>>1)&3)<<2);  
     *a++=*a++=c[(bf>>1)&1];

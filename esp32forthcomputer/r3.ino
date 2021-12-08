@@ -198,8 +198,18 @@ next:
     }
 }
 
-void fastmode(){ esp_intr_disable(DisplayController.m_isr_handle); }
-void slowmode(){ esp_intr_enable(DisplayController.m_isr_handle); }
+
+void fastmode()
+{
+  //esp_intr_disable(DisplayController.m_isr_handle); 
+  esp_intr_disable(DisplayController.GetISRHandle());  
+}
+
+void slowmode()
+{ 
+  //esp_intr_enable(DisplayController.m_isr_handle); 
+  esp_intr_enable(DisplayController.GetISRHandle()); 
+}
 
 int iload(char *fn,int m) {
 int len;
