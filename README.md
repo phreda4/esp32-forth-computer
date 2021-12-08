@@ -8,6 +8,7 @@ Computer made with ESP32 microcontroler
 
 ## Modification of FabGl libary
 
+
 m_HVSync make public to calculate sync without make color (separate components)
 
 in: src/dispdrivers/vgabasecontroller.h
@@ -20,7 +21,10 @@ in: src/dispdrivers/vgabasecontroller.h
 protected:
 ```
 
-##Build a complete computer with a esp32 microcontroller
+User https://github.com/rpsubc8
+make a better solution, add a class with these things exposed
+
+## Build a complete computer with a esp32 microcontroller
 
 Like a C64 or Jupiter Ace but with R3 Lang
 
