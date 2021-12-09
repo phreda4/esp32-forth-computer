@@ -21,7 +21,7 @@ in: src/dispdrivers/vgabasecontroller.h
 protected:
 ```
 
-User https://github.com/rpsubc8
+Coder https://github.com/rpsubc8
 make a better solution, add a class with these things exposed
 
 ## Build a complete computer with a esp32 microcontroller
