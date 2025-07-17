@@ -1,4 +1,5 @@
 # esp32 forth computer
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/phreda4/esp32-forth-computer)
 
 Computer made with ESP32 microcontroler
 
